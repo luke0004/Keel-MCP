@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDB } from './db/index.js';
+import { pushDocumentsBackground } from './mcp-server.js';
 
 interface UploadedFile {
   originalname: string;
@@ -222,6 +223,8 @@ export class IngestionService {
     } finally {
       db.close();
     }
+
+    pushDocumentsBackground();
 
     return {
       id,

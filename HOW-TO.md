@@ -175,6 +175,67 @@ Use the **Search Corpus** box. The search engine supports:
 
 ---
 
+## Syncing to Supabase (optional — for team collaboration)
+
+Keel-MCP can sync your corpus and all annotations to a shared Supabase database so a research team can work from the same dataset.
+
+### Create the tables in Supabase
+
+Go to your Supabase project → **SQL editor** and run:
+
+```sql
+-- Documents
+CREATE TABLE corpus_documents (
+  id                TEXT PRIMARY KEY,
+  title             TEXT,
+  author            TEXT,
+  publication_date  TEXT,
+  content           TEXT,
+  metadata          TEXT,
+  tags              TEXT,
+  field_timestamps  TEXT,
+  is_dirty          INTEGER DEFAULT 1,
+  last_synced_at    TEXT,
+  updated_at        BIGINT
+);
+
+-- Annotations
+CREATE TABLE corpus_annotations (
+  id              TEXT PRIMARY KEY,
+  document_id     TEXT NOT NULL,
+  text            TEXT NOT NULL,
+  tag             TEXT,
+  author_type     TEXT NOT NULL DEFAULT 'llm',
+  author_id       TEXT,
+  corrects_id     TEXT,
+  field_timestamps TEXT,
+  is_dirty        INTEGER DEFAULT 1,
+  last_synced_at  TEXT,
+  updated_at      BIGINT
+);
+```
+
+### Configure the .env file
+
+Create a `.env` file in the `keel-mcp` folder:
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+```
+
+Use the **service role key** (not the anon key) — it bypasses Row Level Security, which keeps setup simple for a trusted local server.
+
+### Sync
+
+Restart the server (`npm run web`) — it picks up the `.env` automatically. The **↑↓ Sync** button appears in the top-right corner of the web UI.
+
+- The button shows how many documents/annotations are pending upload.
+- Click it to push local changes and pull any changes made by collaborators.
+- Every upload and every annotation also triggers a background push automatically.
+
+---
+
 ## A note on privacy
 
 All data stays on your machine. No text, annotation, or search query is sent to an external server unless you explicitly configure a cloud model (Claude, Gemini) instead of Ollama.

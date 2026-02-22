@@ -10,6 +10,10 @@ import { IngestionService } from './ingestion.js';
 import { randomUUID } from 'node:crypto';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createMcpServer, handleToolCall, pushAnnotationsBackground } from './mcp-server.js';
+import { SyncCoordinator } from './core/SyncCoordinator.js';
+import { SupabaseTransport } from './core/SupabaseTransport.js';
+import { config } from 'dotenv';
+config(); // load .env so SUPABASE_URL / SUPABASE_KEY are available at startup
 
 // Initialize DB and create tables on startup
 const db = getDB();
@@ -386,6 +390,56 @@ app.post('/mcp/messages', async (req: any, res: any) => {
     return;
   }
   await transport.handlePostMessage(req, res, req.body);
+});
+
+// ---------------------------------------------------------------------------
+// Supabase sync
+// ---------------------------------------------------------------------------
+
+app.get('/api/sync/status', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const dirtyDocs = (db.prepare('SELECT COUNT(*) as n FROM corpus_documents WHERE is_dirty = 1').get() as { n: number }).n;
+      const dirtyAnns = (db.prepare('SELECT COUNT(*) as n FROM corpus_annotations WHERE is_dirty = 1').get() as { n: number }).n;
+      const tokenDocs = (db.prepare('SELECT value FROM sync_state WHERE key = ?').get(CorpusSchema.syncTokenKey) as { value: string } | undefined)?.value;
+      const tokenAnns = (db.prepare('SELECT value FROM sync_state WHERE key = ?').get(AnnotationSchema.syncTokenKey) as { value: string } | undefined)?.value;
+      res.json({
+        configured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY),
+        dirty_documents:    dirtyDocs,
+        dirty_annotations:  dirtyAnns,
+        last_synced_documents:   tokenDocs ? new Date(Number(tokenDocs)).toISOString() : null,
+        last_synced_annotations: tokenAnns ? new Date(Number(tokenAnns)).toISOString() : null,
+      });
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.post('/api/sync', async (_req, res: any) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    return res.status(400).json({ error: 'Supabase not configured. Add SUPABASE_URL and SUPABASE_KEY to .env' });
+  }
+  const db = getDB();
+  try {
+    const results: Record<string, { pushed: string; pulled: string }> = {};
+    for (const schema of [CorpusSchema, AnnotationSchema]) {
+      const transport = new SupabaseTransport(
+        process.env.SUPABASE_URL,
+        process.env.SUPABASE_KEY,
+        schema.tableName,
+        schema.jsonFields,
+      );
+      await new SyncCoordinator(db, transport, schema).sync();
+      results[schema.tableName] = { pushed: 'ok', pulled: 'ok' };
+    }
+    res.json({ status: 'ok', synced: results, timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  } finally {
+    db.close();
+  }
 });
 
 // ---------------------------------------------------------------------------

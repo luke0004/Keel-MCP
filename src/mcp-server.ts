@@ -16,7 +16,7 @@ import {
 import { getDB } from "./db/index.js";
 import { SyncCoordinator } from "./core/SyncCoordinator.js";
 import { SupabaseTransport } from "./core/SupabaseTransport.js";
-import { LogbookSchema, AnnotationSchema } from "./schema.js";
+import { LogbookSchema, CorpusSchema, AnnotationSchema } from "./schema.js";
 import { AgentMemorySchema } from "./schemas/AgentMemory.js";
 import { logActivityToDB } from "./activity.js";
 
@@ -24,8 +24,8 @@ import { logActivityToDB } from "./activity.js";
 // Background sync helper
 // ---------------------------------------------------------------------------
 
-/** Push dirty annotation rows to Supabase in the background (fire-and-forget). */
-export function pushAnnotationsBackground() {
+/** Push dirty rows for any schema to Supabase in the background (fire-and-forget). */
+function pushSchemaBackground(schema: typeof CorpusSchema) {
   config();
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) return;
   const db = getDB();
@@ -33,14 +33,17 @@ export function pushAnnotationsBackground() {
     const transport = new SupabaseTransport(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_KEY,
-      AnnotationSchema.tableName,
-      AnnotationSchema.jsonFields,
+      schema.tableName,
+      schema.jsonFields,
     );
-    new SyncCoordinator(db, transport, AnnotationSchema).push().catch(() => {});
+    new SyncCoordinator(db, transport, schema).push().catch(() => {});
   } finally {
     db.close();
   }
 }
+
+export function pushDocumentsBackground()   { pushSchemaBackground(CorpusSchema); }
+export function pushAnnotationsBackground() { pushSchemaBackground(AnnotationSchema); }
 
 // ---------------------------------------------------------------------------
 // Helpers

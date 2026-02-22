@@ -209,7 +209,9 @@
 
 <header>
   <h1>Keel<span>-MCP</span> · Corpus Manager</h1>
-  <div style="display:flex; align-items:center; gap:1rem">
+  <div style="display:flex; align-items:center; gap:0.8rem">
+    <span id="syncStatusBadge" style="font-size:0.8rem; color:#aaa"></span>
+    <button id="syncBtn" style="padding:0.4rem 0.9rem; font-size:0.85rem" onclick="triggerSync()">↑↓ Sync</button>
     <a href="/api/documents" target="_blank" style="font-size:0.85rem; color:#5c6bc0; text-decoration:none;">Raw API ↗</a>
     <button class="danger" id="deleteAllBtn" style="padding:0.4rem 0.9rem; font-size:0.85rem">Delete All</button>
   </div>
@@ -782,6 +784,62 @@ async function runQuery() {
   }
 }
 
+// ── Supabase sync ─────────────────────────────────────────────────────────────
+
+async function pollSyncStatus() {
+  try {
+    const r   = await fetch('/api/sync/status');
+    const s   = await r.json();
+    const el  = document.getElementById('syncStatusBadge');
+    const btn = document.getElementById('syncBtn');
+
+    if (!s.configured) {
+      el.textContent   = 'Supabase not configured';
+      el.style.color   = '#aaa';
+      btn.disabled     = true;
+      btn.title        = 'Add SUPABASE_URL and SUPABASE_KEY to .env to enable sync';
+      return;
+    }
+
+    const dirty = (s.dirty_documents || 0) + (s.dirty_annotations || 0);
+    btn.disabled = false;
+    if (dirty > 0) {
+      el.textContent = `${dirty} unsynced`;
+      el.style.color = '#e65100';
+    } else {
+      const lastRaw = s.last_synced_documents || s.last_synced_annotations;
+      el.textContent = lastRaw ? `Synced ${new Date(lastRaw).toLocaleTimeString()}` : 'Not synced yet';
+      el.style.color = '#2e7d32';
+    }
+  } catch { /* ignore poll errors */ }
+}
+
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  const el  = document.getElementById('syncStatusBadge');
+  btn.disabled    = true;
+  btn.textContent = '↑↓ Syncing…';
+  el.textContent  = 'Syncing…';
+  el.style.color  = '#5c6bc0';
+  try {
+    const r    = await fetch('/api/sync', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    await pollSyncStatus();
+    loadDocuments(); // annotations may have arrived from Supabase
+  } catch (err) {
+    el.textContent = '✗ Sync failed';
+    el.style.color = '#c62828';
+    alert('Sync failed: ' + err.message);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '↑↓ Sync';
+  }
+}
+
+// Poll sync status every 10 s so the dirty count stays current
+setInterval(pollSyncStatus, 10000);
+
 // ── Delete all ────────────────────────────────────────────────────────────────
 
 document.getElementById('deleteAllBtn').addEventListener('click', async () => {
@@ -802,6 +860,7 @@ document.getElementById('deleteAllBtn').addEventListener('click', async () => {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadDocuments();
+pollSyncStatus();
 </script>
 
 </body>
