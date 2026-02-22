@@ -1,108 +1,203 @@
-# Keel-MCP: The Offline-First AI Memory Engine
+# Keel-MCP
 
-Keel-MCP is a **local-first synchronization engine** designed to give AI agents (like Claude, Cline, or custom implementations) persistent, long-term memory that works offline and syncs across devices.
+**A local-first AI research engine.** Upload a text corpus, connect any language model, and let it read, search, and annotate your documents — entirely on your own machine. Annotations sync to Supabase when you're ready to share with a team.
 
-It runs as a **Model Context Protocol (MCP)** server, exposing tools to read, write, and search structured data (logs, memories, facts) stored in a local SQLite database. Changes are automatically synchronized with a remote backend (currently Supabase) when online, using a robust conflict resolution strategy.
+---
 
-## 🚀 Why Keel-MCP?
+## What it does
 
-- **Offline-First:** Your agent can read and write memories even without an internet connection. Changes sync when you're back online.
-- **Agent Memory:** Acts as a "long-term memory" for AI, storing facts, preferences, and project context that persists across sessions.
-- **Conflict Resolution:** Uses a "Last Write Wins" strategy with smart merging for arrays (tags, crew members) to handle concurrent edits from multiple devices.
-- **Extensible:** Built on a configurable schema system, allowing you to define new data types easily.
+Keel-MCP runs a local SQLite database and exposes it to AI models through two interfaces simultaneously:
 
-## 🛠️ Project Status
+- **MCP** (Model Context Protocol) — for Claude Desktop, Open WebUI, Continue.dev, and any MCP-compatible client
+- **OpenAI-compatible REST API** — for Ollama, the Claude API, Gemini, LiteLLM, and custom Python/notebook workflows
 
-This project is currently in **Phase 1 (Core Engine)** with initial **Phase 2 (AI Capabilities)** features implemented.
+Both interfaces share the same tool set. Switch models without changing anything else.
 
-| Feature | Status | Notes |
-| :--- | :--- | :--- |
-| **Configurable Schema** | ✅ Implemented | Define tables and fields in `src/schema.ts` |
-| **Generic Conflict Resolver** | ✅ Implemented | Handles array merging (Union Set) and field-level LWW |
-| **Supabase Transport** | ✅ Implemented | Syncs with Supabase PostgreSQL |
-| **MCP Interface** | ✅ Implemented | Tools: `read_recent_logs`, `search_logs`, `remember_fact`, `recall_fact` |
-| **CLI Interface** | ✅ Implemented | Manual `add`, `list`, and `sync` commands |
-| **Semantic Sync (Vectors)** | 🚧 Planned | Phase 2: Vector embeddings for semantic search |
-| **Asset/Blob Sync** | 🚧 Planned | Phase 3: Syncing images/files |
+---
 
-## 📦 Installation
+## Current features
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/keel-mcp.git
-    cd keel-mcp
-    ```
+| Feature | Status |
+|---|---|
+| Web corpus manager (upload, search, delete) | ✅ |
+| Folder drag-and-drop upload (.md, .txt) | ✅ |
+| YAML front-matter + filename metadata extraction | ✅ |
+| Full-text search (SQLite FTS5, ranked results) | ✅ |
+| MCP tools: `read_corpus`, `get_document`, `search_corpus`, `analyze_document`, `annotate_document`, `list_annotations` | ✅ |
+| OpenAI-compatible REST API (`GET /api/tools`, `POST /api/tools/call`) | ✅ |
+| MCP over SSE (Open WebUI, Continue.dev, AnythingLLM) | ✅ |
+| MCP over stdio (Claude Desktop) | ✅ |
+| In-browser agentic query runner (no Python needed) | ✅ |
+| CRDT annotation model (LLM + human, append-only, never overwrites) | ✅ |
+| Live agent activity log (cross-process, SQLite WAL) | ✅ |
+| Agent memory (`remember_fact`, `recall_fact`) | ✅ |
+| Supabase sync infrastructure (push/pull, per-schema tokens, conflict resolution) | ✅ |
+| Batch annotation across corpus | 🔜 |
+| Supabase sync activated for corpus + annotations | 🔜 |
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+---
 
-3.  **Configure Environment:**
-    Create a `.env` file in the root directory with your Supabase credentials:
-    ```bash
-    SUPABASE_URL="https://your-project.supabase.co"
-    SUPABASE_KEY="your-service-role-key"
-    ```
+## Quick start
 
-4.  **Initialize/Sync Database:**
-    Run the sync command to create the local SQLite database (`keel.db`) and pull any existing data:
-    ```bash
-    npm run sync
-    ```
+**Requirements:** Node.js 20+, [Ollama](https://ollama.com) (for local models)
 
-## 🖥️ Usage
+```bash
+git clone https://github.com/luke0004/Keel-MCP.git
+cd Keel-MCP
+npm install
+npm run web          # starts at http://localhost:3000
+```
 
-### 1. With Claude Desktop (Recommended)
+Pull a local model:
 
-To let Claude access Keel-MCP, add the following to your Claude Desktop configuration file:
+```bash
+ollama pull qwen2.5:7b   # ~5 GB, best tool-calling + multilingual
+```
 
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Open **http://localhost:3000**, upload your corpus, and ask a question in the "Ask the AI" panel.
 
+---
+
+## Connecting a model
+
+### Ollama (local, no cloud, no cost)
+
+The web interface connects to Ollama automatically at `http://localhost:11434`. Any model with tool-calling support works. Recommended: `qwen2.5:7b` (multilingual, reliable tool use on Apple Silicon).
+
+### OpenAI-compatible REST (Claude, Gemini, LiteLLM, notebooks)
+
+```python
+from openai import OpenAI
+import requests, json
+
+client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")  # or your cloud endpoint
+tools  = requests.get("http://localhost:3000/api/tools").json()["tools"]
+
+messages = [
+    {"role": "system", "content": "You are a research assistant. The corpus is in German. Write every annotation in German. Do not translate. Always use document IDs returned by search_corpus or read_corpus — never invent them. Use 1–2 keyword searches, not full sentences."},
+    {"role": "user",   "content": "Search for 'erhaben' and annotate the most significant passage."},
+]
+
+for _ in range(10):
+    r = client.chat.completions.create(model="qwen2.5:7b", tools=tools, messages=messages)
+    msg = r.choices[0].message
+    messages.append(msg)
+    if not msg.tool_calls: print(msg.content); break
+    for call in msg.tool_calls:
+        result = requests.post("http://localhost:3000/api/tools/call",
+            json={"name": call.function.name, "arguments": call.function.arguments}).json()
+        messages.append({"role": "tool", "tool_call_id": call.id, "content": result["result"]})
+```
+
+### MCP clients (Claude Desktop, Open WebUI, Continue.dev)
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "keel-logbook": {
+    "keel-mcp": {
       "command": "node",
-      "args": ["--import", "tsx", "/ABSOLUTE/PATH/TO/keel-mcp/src/server.ts"],
-      "env": {
-        "SUPABASE_URL": "your-supabase-url",
-        "SUPABASE_KEY": "your-supabase-key"
-      }
+      "args": ["--import", "tsx", "/absolute/path/to/Keel-MCP/src/server.ts"]
     }
   }
 }
 ```
-*Note: Replace `/ABSOLUTE/PATH/TO/keel-mcp` with the actual path to this repository.*
 
-Once configured, you can ask Claude:
-- "Check my logs for the last engine maintenance."
-- "Remember that I prefer concise answers."
-- "Add a log entry: 'Meeting with team about Phase 2'."
+**Open WebUI / AnythingLLM / Continue.dev** — SSE transport:
+```
+http://localhost:3000/mcp/sse
+```
 
-### 2. CLI Usage
+---
 
-You can also interact with the database manually via the CLI:
+## Corpus preparation
 
-- **List entries:**
-  ```bash
-  npx tsx src/cli.ts list
-  ```
+Metadata priority: **front-matter > upload form > filename > defaults**
 
-- **Add an entry:**
-  ```bash
-  npx tsx src/cli.ts add "Title" "Body content" --tags tag1,tag2
-  ```
+**Front-matter** (most reliable):
+```markdown
+---
+title: Rezension der Neunten Sinfonie
+author: E.T.A. Hoffmann
+publication_date: 1810-07-04
+source: Allgemeine musikalische Zeitung
+tags: [romantik, das-erhabene, beethoven]
+---
 
-- **Force Sync:**
-  ```bash
-  npm run sync
-  ```
+Volltext der Rezension…
+```
 
-## 🏗️ Architecture
+**Filename convention** (automatic fallback):
+```
+1810-07-04, E.T.A. Hoffmann.md   →   date: 1810-07-04, title: E.T.A. Hoffmann
+```
 
-- **Core (`src/core/`)**: Contains the sync logic (`SyncCoordinator`) and conflict resolution (`ConflictResolver`).
-- **Database (`src/db/`)**: Manages the local SQLite connection using `better-sqlite3`.
-- **MCP Server (`src/server.ts`)**: The entry point for the Model Context Protocol, defining tools and resources.
-- **Transport (`src/core/SupabaseTransport.ts`)**: Handles communication with the remote Supabase backend.
+---
+
+## Annotation model
+
+Annotations are stored in a dedicated `corpus_annotations` table, separate from document content. The model is **append-only** (CRDT-safe):
+
+- **LLM annotations** — purple in the UI, immutable after creation
+- **Human annotations** — green in the UI, deletable by the researcher
+- **Corrections** — a human annotation can reference an LLM annotation via `corrects_id`, creating a traceable revision chain
+
+Neither side can overwrite the other. This makes the full annotation history reproducible and publishable.
+
+---
+
+## Supabase sync (optional)
+
+Create a `.env` file to enable cloud sync:
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-service-role-key
+```
+
+The sync engine uses per-schema server-change tokens, last-write-wins conflict resolution, and union-set merge for array fields (tags). Annotations use a separate sync token so document pulls and annotation pulls don't interfere.
+
+---
+
+## Architecture
+
+```
+Browser (http://localhost:3000)
+    │
+    ├── POST /api/run          → agentic loop (SSE stream)
+    ├── GET  /api/tools        → OpenAI tool schema
+    ├── POST /api/tools/call   → tool execution
+    ├── GET  /mcp/sse          → MCP over SSE
+    └── POST /api/upload       → corpus ingestion
+            │
+    Express (web.ts)
+            │
+    handleToolCall (mcp-server.ts)   ←── MCP stdio (server.ts)
+            │
+    SQLite keel.db (better-sqlite3, WAL mode)
+            │
+    SyncCoordinator ──→ Supabase (when .env configured)
+```
+
+---
+
+## Project layout
+
+```
+src/
+  server.ts          stdio MCP entry point (Claude Desktop)
+  web.ts             Express server (web UI + REST + SSE)
+  mcp-server.ts      tool logic shared by both transports
+  ingestion.ts       file parsing, front-matter, filename heuristics
+  schema.ts          LogbookSchema, CorpusSchema, AnnotationSchema
+  activity.ts        cross-process activity log
+  core/
+    SyncCoordinator.ts   push/pull sync loop
+    ConflictResolver.ts  LWW + union-set merge
+    SupabaseTransport.ts Supabase adapter
+  db/
+    index.ts         SQLite init, FTS5, activity table
+public/
+  index.html         single-page corpus manager UI
+HOW-TO.md           researcher guide (no coding required)
+```

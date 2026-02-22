@@ -14,3 +14,43 @@ export const LogbookSchema: SyncSchema = {
   },
   // deletedAtColumn: "deleted_at" // If we add soft deletes later
 };
+
+export const CorpusSchema: SyncSchema = {
+  tableName: "corpus_documents",
+  fields: ["title", "author", "publication_date", "content", "metadata", "tags"],
+  jsonFields: ["metadata", "tags"],
+  unionSetFields: ["tags"],
+  columnDefs: {
+    title: "TEXT",
+    author: "TEXT",
+    publication_date: "TEXT",
+    content: "TEXT",
+    metadata: "TEXT",
+    tags: "TEXT",
+  },
+  syncTokenKey: "last_token_corpus_documents",
+};
+
+/**
+ * Annotations are append-only (CRDT): each annotation is a separate row
+ * with a stable UUID.  Sync is safe with INSERT OR REPLACE because annotation
+ * content never mutates after creation — the upsert is effectively a no-op
+ * when the record already exists.
+ *
+ * syncTokenKey is scoped so annotation pulls don't advance the document token.
+ */
+export const AnnotationSchema: SyncSchema = {
+  tableName: "corpus_annotations",
+  fields: ["document_id", "text", "tag", "author_type", "author_id", "corrects_id"],
+  jsonFields: [],
+  unionSetFields: [],
+  columnDefs: {
+    document_id: "TEXT NOT NULL",
+    text:        "TEXT NOT NULL",
+    tag:         "TEXT",
+    author_type: "TEXT NOT NULL DEFAULT 'llm'",
+    author_id:   "TEXT",
+    corrects_id: "TEXT",
+  },
+  syncTokenKey: "last_token_corpus_annotations",
+};

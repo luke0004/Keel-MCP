@@ -71,9 +71,11 @@ export class SyncCoordinator {
    * Pull remote changes and merge into SQLite using ConflictResolver.
    */
   async pull(): Promise<void> {
-    // Get last token
+    // Get last token — use schema-specific key so multiple schemas don't
+    // corrupt each other's sync position.
+    const tokenKey = this.schema.syncTokenKey ?? "last_token";
     const tokenSql = "SELECT value FROM sync_state WHERE key = ?";
-    const tokenRow = this.db.prepare(tokenSql).get("last_token") as { value: string | null } | undefined;
+    const tokenRow = this.db.prepare(tokenSql).get(tokenKey) as { value: string | null } | undefined;
     const lastToken = Number(tokenRow?.value ?? 0) || 0;
 
     const incoming = await this.transport.fetchChanges(lastToken);
@@ -153,11 +155,11 @@ export class SyncCoordinator {
 
     processBatch(incoming);
 
-    // Update token
+    // Update schema-specific token
     const saveToken = this.db.prepare(
-      "INSERT INTO sync_state (key, value) VALUES ('last_token', ?) ON CONFLICT(key) DO UPDATE SET value = ?"
+      `INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?`
     );
-    saveToken.run(String(maxUpdatedAt), String(maxUpdatedAt));
+    saveToken.run(tokenKey, String(maxUpdatedAt), String(maxUpdatedAt));
   }
 
   private rowToRecord(row: SyncRow): SyncRecord {

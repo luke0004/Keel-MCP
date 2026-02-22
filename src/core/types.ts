@@ -21,6 +21,12 @@ export interface SyncSchema {
   columnDefs: Record<string, string>;
   /** Optional name of the deleted_at column if soft deletes are supported */
   deletedAtColumn?: string;
+  /**
+   * Key used to store this schema's sync token in the sync_state table.
+   * Defaults to "last_token". Must be unique per schema when syncing
+   * multiple schemas against the same DB so their pull positions don't collide.
+   */
+  syncTokenKey?: string;
 }
 
 export interface Transport {

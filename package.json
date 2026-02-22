@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "sync": "tsx src/cli.ts sync",
-    "mcp": "node --import tsx src/server.ts"
+    "mcp": "node --import tsx src/server.ts",
+    "web": "tsx src/web.ts"
   },
   "keywords": [],
   "author": "",
@@ -14,15 +15,23 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "zod": "^3.25.0",
     "@supabase/supabase-js": "^2.97.0",
     "@types/node": "^25.3.0",
     "better-sqlite3": "^12.6.2",
+    "body-parser": "^2.2.2",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "multer": "^2.0.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13"
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/body-parser": "^1.19.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.0.0"
   }
 }

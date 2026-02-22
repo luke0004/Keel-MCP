@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keel-MCP | Corpus Manager</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+      background: #f0f2f5;
+      color: #1a1a2e;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #dde1ea;
+      padding-bottom: 1rem;
+      margin-bottom: 2rem;
+    }
+    h1 { margin: 0; font-size: 1.4rem; color: #1a1a2e; }
+    h1 span { color: #5c6bc0; }
+    h2 { margin: 0 0 1.2rem; font-size: 1.05rem; color: #333; }
+
+    .card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Upload ── */
+    .upload-area {
+      border: 2px dashed #c5cae9;
+      padding: 2.5rem 2rem;
+      text-align: center;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: #fafbff;
+    }
+    .upload-area:hover, .upload-area.dragover {
+      border-color: #5c6bc0;
+      background: #eef0fb;
+    }
+    .upload-area p { margin: 0.3rem 0; color: #666; font-size: 0.95rem; }
+    .upload-area .hint { font-size: 0.82rem; color: #aaa; margin-top: 0.5rem; }
+    #fileName { font-weight: 600; color: #5c6bc0; min-height: 1.2rem; margin-top: 0.6rem; }
+
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+    label { font-size: 0.85rem; color: #555; display: block; margin-bottom: 0.2rem; }
+    input[type="text"], input[type="date"] {
+      width: 100%;
+      padding: 0.5rem 0.7rem;
+      border: 1px solid #dde1ea;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      background: #fafbff;
+    }
+    input:focus { outline: 2px solid #5c6bc0; border-color: transparent; }
+
+    button {
+      background: #5c6bc0;
+      color: white;
+      border: none;
+      padding: 0.65rem 1.4rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: background .15s;
+    }
+    button:hover { background: #3f51b5; }
+    button:disabled { background: #b0bec5; cursor: not-allowed; }
+    button.danger { background: #e53935; }
+    button.danger:hover { background: #c62828; }
+
+    #uploadStatus { margin-top: 0.8rem; font-size: 0.9rem; font-weight: 500; }
+    .success { color: #2e7d32; }
+    .error   { color: #c62828; }
+
+    /* ── Search ── */
+    .search-row { display: flex; gap: 0.6rem; }
+    .search-row input { flex: 1; }
+    .search-hint { font-size: 0.8rem; color: #aaa; margin-top: 0.5rem; }
+
+    #searchResults { margin-top: 1rem; }
+    .search-result {
+      padding: 0.9rem 0;
+      border-bottom: 1px solid #eef0f5;
+    }
+    .search-result:last-child { border-bottom: none; }
+    .search-result strong { color: #1a1a2e; }
+    .search-result .meta { font-size: 0.82rem; color: #888; margin: 0.2rem 0; }
+    .search-result .snippet {
+      font-size: 0.88rem;
+      color: #444;
+      margin-top: 0.4rem;
+      line-height: 1.5;
+    }
+    .search-result .snippet mark {
+      background: #fff176;
+      color: #1a1a2e;
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+
+    /* ── Corpus library ── */
+    .doc-list { list-style: none; padding: 0; margin: 0; }
+    .doc-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 0.9rem 0;
+      border-bottom: 1px solid #eef0f5;
+      gap: 1rem;
+    }
+    .doc-item:last-child { border-bottom: none; }
+    .doc-meta { font-size: 0.82rem; color: #888; margin-top: 0.25rem; }
+    .badge {
+      background: #e8eaf6;
+      color: #3f51b5;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-right: 0.3rem;
+    }
+    .badge.annotation { background: #fff3e0; color: #e65100; }
+    .doc-id { font-family: monospace; font-size: 0.68rem; color: #ccc; margin-top: 0.3rem; }
+
+    /* ── Annotation panel ── */
+    .annotation-panel {
+      border-top: 1px solid #eef0f5;
+      margin-top: 0.8rem;
+      padding-top: 0.8rem;
+      display: none;
+    }
+    .annotation-panel.open { display: block; }
+    .annotation-list { list-style: none; padding: 0; margin: 0 0 0.8rem; }
+    .ann-item {
+      padding: 0.6rem 0.8rem;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      font-size: 0.87rem;
+      line-height: 1.5;
+    }
+    .ann-item.llm   { background: #e8eaf6; border-left: 3px solid #5c6bc0; }
+    .ann-item.human { background: #e8f5e9; border-left: 3px solid #43a047; }
+    .ann-meta { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+    .ann-tag  { background: white; border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.72rem; margin-right: 0.3rem; }
+    .ann-corrects { font-style: italic; color: #aaa; font-size: 0.75rem; }
+    .ann-delete { float: right; background: none; border: none; color: #e57373; cursor: pointer; font-size: 0.8rem; padding: 0; }
+    .ann-delete:hover { color: #c62828; background: none; }
+
+    .add-ann-form { display: flex; flex-direction: column; gap: 0.5rem; }
+    .add-ann-form input { font-size: 0.88rem; }
+    .add-ann-form textarea { padding: 0.5rem 0.7rem; border: 1px solid #dde1ea; border-radius: 6px; font-size: 0.88rem; resize: vertical; min-height: 60px; font-family: inherit; }
+    .add-ann-row { display: flex; gap: 0.5rem; }
+    .add-ann-row input { flex: 1; }
+    .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.85rem; }
+
+    /* ── Activity panel ── */
+    .activity-panel {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      border-radius: 10px;
+      padding: 1.2rem 1.5rem;
+      font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+      font-size: 0.82rem;
+      line-height: 1.6;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-bottom: 1.5rem;
+    }
+    .activity-panel h2 { color: #90caf9; font-family: system-ui; margin-bottom: 1rem; }
+
+    .log-entry { margin-bottom: 1rem; border-bottom: 1px solid #2d2d4e; padding-bottom: 0.8rem; }
+    .log-entry:last-child { border-bottom: none; margin-bottom: 0; }
+
+    .log-time    { color: #78909c; }
+    .log-tool    { font-weight: 700; }
+    .log-tool.search   { color: #64b5f6; }
+    .log-tool.analyze  { color: #ce93d8; }
+    .log-tool.annotate { color: #ffb74d; }
+    .log-tool.memory   { color: #a5d6a7; }
+    .log-tool.default  { color: #80cbc4; }
+
+    .log-summary { color: #b0bec5; margin-top: 0.15rem; }
+    .log-sql {
+      margin-top: 0.3rem;
+      color: #546e7a;
+      font-size: 0.77rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-sql::before { content: 'SQL ▸ '; color: #37474f; }
+
+    .empty-log { color: #546e7a; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Keel<span>-MCP</span> · Corpus Manager</h1>
+  <div style="display:flex; align-items:center; gap:1rem">
+    <a href="/api/documents" target="_blank" style="font-size:0.85rem; color:#5c6bc0; text-decoration:none;">Raw API ↗</a>
+    <button class="danger" id="deleteAllBtn" style="padding:0.4rem 0.9rem; font-size:0.85rem">Delete All</button>
+  </div>
+</header>
+
+<!-- Upload -->
+<div class="card">
+  <h2>Upload Corpus</h2>
+  <form id="uploadForm">
+    <div class="upload-area" id="dropZone">
+      <p>Drop a <strong>folder</strong> or select files</p>
+      <p class="hint">Accepts .md and .txt · drag a whole folder to import in bulk</p>
+      <input type="file" id="fileInput" name="files" style="display:none" multiple accept=".md,.txt,text/plain,text/markdown">
+      <div id="fileName"></div>
+    </div>
+
+    <div class="meta-grid">
+      <div>
+        <label>Author <span style="color:#aaa">(applied to all files)</span></label>
+        <input type="text" name="author" placeholder="e.g. Eduard Hanslick">
+      </div>
+      <div>
+        <label>Publication Date</label>
+        <input type="date" name="publication_date">
+      </div>
+    </div>
+
+    <label>Tags <span style="color:#aaa">(comma-separated)</span></label>
+    <input type="text" name="tags" placeholder="music criticism, romanticism, 19th century" style="margin-bottom:1rem">
+
+    <button type="submit" id="submitBtn">Upload Documents</button>
+    <div id="uploadStatus"></div>
+  </form>
+</div>
+
+<!-- Search -->
+<div class="card">
+  <h2>Search Corpus</h2>
+  <div class="search-row">
+    <input type="text" id="searchInput" placeholder='e.g.  sublime   "nature metaphor"   Kant AND beauty'>
+    <button type="button" id="searchBtn">Search</button>
+  </div>
+  <p class="search-hint">
+    FTS5 syntax: phrases in quotes · AND / OR / NOT · prefix wildcard <code>philos*</code>
+  </p>
+  <div id="searchResults"></div>
+</div>
+
+<!-- Ask the AI -->
+<div class="card">
+  <h2>Ask the AI</h2>
+
+  <label>System prompt</label>
+  <textarea id="systemPrompt" rows="4" style="width:100%; padding:0.5rem 0.7rem; border:1px solid #dde1ea; border-radius:6px; font-size:0.85rem; font-family:inherit; resize:vertical; margin-bottom:0.9rem; background:#fafbff;">You are a musicology research assistant. Use the available tools to analyse the corpus. When you find a relevant passage, write an annotation with a concise tag. The corpus is in German. Write every annotation in German. Do not translate. Do not use English. IMPORTANT: Always use document IDs returned by search_corpus or read_corpus. Never invent or guess a document ID. If search_corpus returns no results, try a shorter or simpler keyword (1–2 words maximum). Do not use full sentences or phrases as search queries.</textarea>
+
+  <label>Your question</label>
+  <textarea id="userMessage" rows="2" placeholder="e.g. Search for 'erhaben' and annotate the three most significant passages." style="width:100%; padding:0.5rem 0.7rem; border:1px solid #dde1ea; border-radius:6px; font-size:0.9rem; font-family:inherit; resize:vertical; margin-bottom:0.9rem; background:#fafbff;"></textarea>
+
+  <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap">
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap">Model</label>
+      <input type="text" id="modelName" value="qwen2.5:7b" style="width:160px">
+    </div>
+    <button id="runBtn" onclick="runQuery()">▶ Run</button>
+    <span id="runStatus" style="font-size:0.85rem; color:#888"></span>
+  </div>
+
+  <div id="runOutput" class="activity-panel" style="display:none; margin-top:1.2rem; margin-bottom:0"></div>
+</div>
+
+<!-- Connect your LLM -->
+<div class="card">
+  <h2>Connect a Local LLM</h2>
+  <p style="color:#555; font-size:0.92rem; margin-bottom:1rem">
+    The MCP server is also reachable over SSE — connect any local model to the same corpus tools Claude uses.
+  </p>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem">
+
+    <div style="background:#f5f7ff; border-radius:8px; padding:1rem">
+      <strong style="font-size:0.9rem">Open WebUI / AnythingLLM</strong>
+      <p style="font-size:0.82rem; color:#555; margin:0.5rem 0">Settings → MCP Servers → Add server</p>
+      <code style="font-size:0.8rem; background:#e8eaf6; padding:0.4rem 0.6rem; border-radius:4px; display:block; word-break:break-all">
+        http://localhost:3000/mcp/sse
+      </code>
+    </div>
+
+    <div style="background:#f5f7ff; border-radius:8px; padding:1rem">
+      <strong style="font-size:0.9rem">Continue.dev (VS Code)</strong>
+      <p style="font-size:0.82rem; color:#555; margin:0.5rem 0">Add to <code>~/.continue/config.json</code></p>
+      <pre style="font-size:0.75rem; background:#e8eaf6; padding:0.4rem 0.6rem; border-radius:4px; margin:0; overflow-x:auto">{
+  "mcpServers": [{
+    "name": "keel-mcp",
+    "transport": "sse",
+    "url": "http://localhost:3000/mcp/sse"
+  }]
+}</pre>
+    </div>
+
+    <div style="background:#f5f7ff; border-radius:8px; padding:1rem">
+      <strong style="font-size:0.9rem">Claude Desktop (stdio)</strong>
+      <p style="font-size:0.82rem; color:#555; margin:0.5rem 0">Add to <code>claude_desktop_config.json</code></p>
+      <pre style="font-size:0.75rem; background:#e8eaf6; padding:0.4rem 0.6rem; border-radius:4px; margin:0; overflow-x:auto">{
+  "mcpServers": {
+    "keel-mcp": {
+      "command": "node",
+      "args": ["--import","tsx",
+        "/path/to/keel-mcp/src/server.ts"]
+    }
+  }
+}</pre>
+    </div>
+
+    <div style="background:#f5f7ff; border-radius:8px; padding:1rem">
+      <strong style="font-size:0.9rem">OpenAI-compatible REST <span style="background:#e8f5e9; color:#2e7d32; border-radius:4px; padding:0.1rem 0.4rem; font-size:0.7rem; font-weight:700">UNIVERSAL</span></strong>
+      <p style="font-size:0.82rem; color:#555; margin:0.5rem 0">Works with Ollama, Claude API, Gemini, LiteLLM — no MCP client needed</p>
+      <code style="font-size:0.8rem; background:#e8eaf6; padding:0.4rem 0.6rem; border-radius:4px; display:block; margin-bottom:0.3rem">GET  /api/tools         → tool schema</code>
+      <code style="font-size:0.8rem; background:#e8eaf6; padding:0.4rem 0.6rem; border-radius:4px; display:block">POST /api/tools/call    → { name, arguments }</code>
+    </div>
+
+  </div>
+</div>
+
+<!-- Agent Activity -->
+<div class="activity-panel" id="activityPanel">
+  <h2>Live Agent Activity</h2>
+  <div id="activityLog"><span class="empty-log">Waiting for Claude…</span></div>
+</div>
+
+<!-- Corpus Library -->
+<div class="card">
+  <h2>Corpus Library</h2>
+  <ul class="doc-list" id="docList">
+    <li style="padding:1rem; color:#aaa; text-align:center">Loading…</li>
+  </ul>
+</div>
+
+<script>
+// ── File selection ────────────────────────────────────────────────────────────
+
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const fileNameEl = document.getElementById('fileName');
+let selectedFiles = [];
+
+function isAllowed(name) {
+  return name.endsWith('.md') || name.endsWith('.txt');
+}
+
+// Read all text files from a FileSystemEntry recursively
+async function readFilesFromEntry(entry, out = []) {
+  if (entry.isFile) {
+    if (isAllowed(entry.name)) {
+      await new Promise((res, rej) => entry.file(f => { out.push(f); res(); }, rej));
+    }
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    // readEntries returns up to 100 entries at a time; call repeatedly until done
+    let batch;
+    do {
+      batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+      for (const e of batch) await readFilesFromEntry(e, out);
+    } while (batch.length > 0);
+  }
+  return out;
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+dropZone.addEventListener('drop', async e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const items = [...(e.dataTransfer?.items ?? [])];
+  const files = [];
+  for (const item of items) {
+    const entry = item.webkitGetAsEntry?.();
+    if (entry) await readFilesFromEntry(entry, files);
+  }
+  if (files.length) {
+    selectedFiles = files;
+    updateFileName();
+  }
+});
+
+fileInput.addEventListener('change', () => {
+  selectedFiles = [...fileInput.files].filter(f => isAllowed(f.name));
+  updateFileName();
+});
+
+function updateFileName() {
+  if (!selectedFiles.length) { fileNameEl.textContent = ''; return; }
+  fileNameEl.textContent = selectedFiles.length === 1
+    ? selectedFiles[0].name
+    : `${selectedFiles.length} files selected`;
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+
+document.getElementById('uploadForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn    = document.getElementById('submitBtn');
+  const status = document.getElementById('uploadStatus');
+
+  const filesToUpload = selectedFiles.length
+    ? selectedFiles
+    : [...(fileInput.files ?? [])].filter(f => isAllowed(f.name));
+
+  if (!filesToUpload.length) {
+    status.innerHTML = '<span class="error">✗ No .md or .txt files selected.</span>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+  status.textContent = '';
+
+  const form = new FormData(document.getElementById('uploadForm'));
+  // Replace files field with our filtered set
+  form.delete('files');
+  for (const f of filesToUpload) form.append('files', f);
+
+  // Parse tags as JSON array
+  const tags = form.get('tags');
+  if (tags) form.set('tags', JSON.stringify(String(tags).split(',').map(t => t.trim()).filter(Boolean)));
+
+  try {
+    const res  = await fetch('/api/upload', { method: 'POST', body: form });
+    const data = await res.json();
+    if (res.ok) {
+      const count = Array.isArray(data) ? data.length : 1;
+      status.innerHTML = `<span class="success">✓ ${count} document${count > 1 ? 's' : ''} uploaded.</span>`;
+      document.getElementById('uploadForm').reset();
+      fileNameEl.textContent = '';
+      selectedFiles = [];
+      loadDocuments();
+    } else {
+      throw new Error(data.error || 'Upload failed');
+    }
+  } catch (err) {
+    status.innerHTML = `<span class="error">✗ ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload Documents';
+  }
+});
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function renderSnippet(raw) {
+  // Convert **match** markers from FTS5 snippet() into <mark> tags
+  return escapeHtml(raw).replace(/\*\*(.+?)\*\*/g, '<mark>$1</mark>');
+}
+
+async function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  const container = document.getElementById('searchResults');
+  if (!q) { container.innerHTML = ''; return; }
+
+  container.innerHTML = '<p style="color:#aaa; font-size:0.9rem">Searching…</p>';
+  try {
+    const res  = await fetch('/api/search?q=' + encodeURIComponent(q));
+    const rows = await res.json();
+    if (!rows.length) {
+      container.innerHTML = '<p style="color:#aaa; font-size:0.9rem">No results found.</p>';
+      return;
+    }
+    container.innerHTML = rows.map(row => {
+      const tags = JSON.parse(row.tags || '[]').map(t => `<span class="badge">${escapeHtml(t)}</span>`).join('');
+      return `
+        <div class="search-result">
+          <strong>${escapeHtml(row.title)}</strong>
+          <div class="meta">${escapeHtml(row.author || 'Unknown')} · ${escapeHtml(row.publication_date || '')} ${tags}</div>
+          <div class="snippet">${renderSnippet(row.snippet || '')}</div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = `<p class="error">Search failed: ${err.message}</p>`;
+  }
+}
+
+document.getElementById('searchBtn').addEventListener('click', doSearch);
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+// ── Corpus library ────────────────────────────────────────────────────────────
+
+async function loadDocuments() {
+  const list = document.getElementById('docList');
+  try {
+    const res  = await fetch('/api/documents');
+    const docs = await res.json();
+    if (!docs.length) {
+      list.innerHTML = '<li style="padding:1rem; color:#aaa; text-align:center">No documents yet. Upload some above!</li>';
+      return;
+    }
+    list.innerHTML = docs.map(doc => {
+      const tags = JSON.parse(doc.tags || '[]').map(t => `<span class="badge">${escapeHtml(t)}</span>`).join('');
+      const meta = JSON.parse(doc.metadata || '{}');
+      const size = ((meta.size || 0) / 1024).toFixed(1);
+      return `
+        <li class="doc-item" style="flex-direction:column; align-items:stretch">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem">
+            <div style="min-width:0; flex:1">
+              <strong style="cursor:pointer; color:#3f51b5" onclick="toggleAnnotations('${doc.id}', this)">
+                ${escapeHtml(doc.title)}
+              </strong>
+              <div class="doc-meta">${escapeHtml(doc.author || '—')} · ${escapeHtml(doc.publication_date || 'Unknown date')} · ${size} KB</div>
+              <div style="margin-top:0.3rem">${tags}</div>
+            </div>
+            <div style="flex-shrink:0; text-align:right">
+              <button class="danger" style="padding:0.3rem 0.7rem; font-size:0.8rem" onclick="deleteDoc('${doc.id}')">Delete</button>
+              <div class="doc-id">${doc.id}</div>
+            </div>
+          </div>
+          <div class="annotation-panel" id="ann-${doc.id}">
+            <div class="annotation-list" id="ann-list-${doc.id}">
+              <p style="color:#aaa; font-size:0.85rem; padding:0.3rem 0">Loading annotations…</p>
+            </div>
+            <div class="add-ann-form">
+              <strong style="font-size:0.85rem; color:#555">Add your annotation</strong>
+              <textarea id="ann-text-${doc.id}" placeholder="Your interpretation, correction, or additional context…"></textarea>
+              <div class="add-ann-row">
+                <input type="text" id="ann-tag-${doc.id}" placeholder="tag (e.g. kantian-sublime)">
+                <input type="text" id="ann-corrects-${doc.id}" placeholder="corrects annotation ID (optional)">
+                <button class="btn-sm" onclick="submitAnnotation('${doc.id}')">Add</button>
+              </div>
+            </div>
+          </div>
+        </li>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<li class="error" style="padding:1rem">Failed to load: ${err.message}</li>`;
+  }
+}
+
+async function toggleAnnotations(docId, titleEl) {
+  const panel = document.getElementById('ann-' + docId);
+  const isOpen = panel.classList.toggle('open');
+  titleEl.textContent = (isOpen ? '▾ ' : '') + titleEl.textContent.replace(/^▾ /, '');
+  if (isOpen) await loadAnnotations(docId);
+}
+
+async function loadAnnotations(docId) {
+  const listEl = document.getElementById('ann-list-' + docId);
+  try {
+    const res   = await fetch('/api/documents/' + docId + '/annotations');
+    const anns  = await res.json();
+    if (!anns.length) {
+      listEl.innerHTML = '<p style="color:#aaa; font-size:0.85rem; padding:0.3rem 0">No annotations yet.</p>';
+      return;
+    }
+    listEl.innerHTML = '<ul class="annotation-list">' + anns.map(a => {
+      const cls     = a.author_type === 'human' ? 'human' : 'llm';
+      const label   = a.author_type === 'human' ? '👤 Human' : `🤖 LLM${a.author_id ? ' · ' + escapeHtml(a.author_id) : ''}`;
+      const tagHtml = a.tag ? `<span class="ann-tag">${escapeHtml(a.tag)}</span>` : '';
+      const correctsHtml = a.corrects_id ? `<span class="ann-corrects">↳ corrects ${escapeHtml(a.corrects_id.slice(0, 8))}…</span>` : '';
+      const deleteBtn = a.author_type === 'human'
+        ? `<button class="ann-delete" title="Delete" onclick="deleteAnnotation('${a.id}', '${docId}')">✕</button>`
+        : '';
+      const time = new Date(a.updated_at).toLocaleDateString();
+      return `<li class="ann-item ${cls}">
+        ${deleteBtn}
+        ${escapeHtml(a.text)}
+        <div class="ann-meta">${label} · ${time} ${tagHtml} ${correctsHtml}</div>
+      </li>`;
+    }).join('') + '</ul>';
+  } catch (err) {
+    listEl.innerHTML = `<p class="error" style="font-size:0.85rem">Failed to load: ${err.message}</p>`;
+  }
+}
+
+async function submitAnnotation(docId) {
+  const text     = document.getElementById('ann-text-' + docId).value.trim();
+  const tag      = document.getElementById('ann-tag-' + docId).value.trim();
+  const corrects = document.getElementById('ann-corrects-' + docId).value.trim();
+  if (!text) return;
+  try {
+    const res = await fetch('/api/documents/' + docId + '/annotations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, tag: tag || undefined, corrects_id: corrects || undefined }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error);
+    document.getElementById('ann-text-' + docId).value = '';
+    document.getElementById('ann-tag-' + docId).value = '';
+    document.getElementById('ann-corrects-' + docId).value = '';
+    await loadAnnotations(docId);
+    loadDocuments();  // refresh badge counts
+  } catch (err) {
+    alert('Failed to add annotation: ' + err.message);
+  }
+}
+
+async function deleteAnnotation(annId, docId) {
+  if (!confirm('Delete this annotation?')) return;
+  await fetch('/api/annotations/' + annId, { method: 'DELETE' });
+  await loadAnnotations(docId);
+}
+
+async function deleteDoc(id) {
+  if (!confirm('Delete this document and all its annotations from the corpus?')) return;
+  await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+  loadDocuments();
+}
+
+// ── Activity log ──────────────────────────────────────────────────────────────
+
+const toolColors = {
+  search_corpus:     'search',
+  search_logs:       'search',
+  analyze_document:  'analyze',
+  annotate_document: 'annotate',
+  remember_fact:     'memory',
+  recall_fact:       'memory',
+};
+
+const toolIcons = {
+  search_corpus:     '🔍',
+  search_logs:       '🔍',
+  analyze_document:  '🔬',
+  annotate_document: '✍️',
+  remember_fact:     '🧠',
+  recall_fact:       '🧠',
+  read_corpus:       '📚',
+  get_document:      '📄',
+  log_entry:         '📝',
+  sync_now:          '🔄',
+};
+
+function renderActivity(entries) {
+  const container = document.getElementById('activityLog');
+  if (!entries.length) {
+    container.innerHTML = '<span class="empty-log">No activity yet. Ask Claude to search or analyze the corpus.</span>';
+    return;
+  }
+  container.innerHTML = entries.map(entry => {
+    const time  = new Date(entry.timestamp).toLocaleTimeString();
+    const cls   = toolColors[entry.tool] || 'default';
+    const icon  = toolIcons[entry.tool] || '⚙️';
+    const params = JSON.parse(entry.params || '{}');
+    const paramStr = Object.entries(params)
+      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+      .join(' ')
+      .slice(0, 120);
+    const sqlBlock = entry.sql_preview
+      ? `<div class="log-sql">${escapeHtml(entry.sql_preview)}</div>`
+      : '';
+    return `
+      <div class="log-entry">
+        <span class="log-time">[${time}]</span>
+        <span class="log-tool ${cls}"> ${icon} ${entry.tool}</span>
+        <span style="color:#546e7a"> ${escapeHtml(paramStr)}</span>
+        ${entry.result_summary ? `<div class="log-summary">→ ${escapeHtml(entry.result_summary)}</div>` : ''}
+        ${sqlBlock}
+      </div>`;
+  }).join('');
+}
+
+let lastActivityCount = 0;
+async function pollActivity() {
+  try {
+    const res     = await fetch('/api/activity');
+    const entries = await res.json();
+    if (entries.length !== lastActivityCount) {
+      lastActivityCount = entries.length;
+      renderActivity(entries);
+    }
+  } catch {
+    // Ignore poll errors silently
+  }
+}
+
+setInterval(pollActivity, 2000);
+pollActivity();
+
+// ── Ask the AI ────────────────────────────────────────────────────────────────
+
+const toolIcons2 = {
+  search_corpus:     '🔍', analyze_document: '🔬',
+  annotate_document: '✍️', list_annotations: '📋',
+  get_document:      '📄', read_corpus:      '📚',
+};
+
+async function runQuery() {
+  const systemPrompt = document.getElementById('systemPrompt').value.trim();
+  const userMessage  = document.getElementById('userMessage').value.trim();
+  const model        = document.getElementById('modelName').value.trim() || 'qwen2.5:7b';
+  const btn          = document.getElementById('runBtn');
+  const status       = document.getElementById('runStatus');
+  const output       = document.getElementById('runOutput');
+
+  if (!userMessage) { alert('Please enter a question.'); return; }
+
+  btn.disabled  = true;
+  btn.textContent = '⏳ Running…';
+  status.textContent = '';
+  output.style.display = 'block';
+  output.innerHTML = '<span class="empty-log">Connecting to model…</span>';
+
+  let html = '';
+  const append = (block) => { html += block; output.innerHTML = html; output.scrollTop = output.scrollHeight; };
+
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ systemPrompt, userMessage, model }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      output.innerHTML = `<span class="error">✗ ${escapeHtml(err.error || 'Request failed')}</span>`;
+      return;
+    }
+
+    output.innerHTML = '';
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (evt.type === 'tool_call') {
+          const icon = toolIcons2[evt.name] || '⚙️';
+          const argsStr = escapeHtml(JSON.stringify(evt.args).slice(0, 120));
+          append(`<div class="log-entry"><span class="log-tool annotate">${icon} ${escapeHtml(evt.name)}</span> <span style="color:#546e7a">${argsStr}</span></div>`);
+
+        } else if (evt.type === 'tool_result') {
+          append(`<div class="log-entry" style="margin-top:-0.6rem; padding-top:0"><div class="log-summary">↳ ${escapeHtml(evt.result.slice(0, 300))}${evt.result.length > 300 ? '…' : ''}</div></div>`);
+
+        } else if (evt.type === 'answer') {
+          append(`<div class="log-entry" style="border-top:1px solid #2d2d4e; padding-top:0.8rem; margin-top:0.4rem"><span class="log-tool memory">✓ Answer</span><div style="color:#e0e0e0; margin-top:0.4rem; white-space:pre-wrap">${escapeHtml(evt.text)}</div></div>`);
+          status.innerHTML = '<span class="success">Done.</span>';
+          loadDocuments(); // refresh annotation counts
+
+        } else if (evt.type === 'error') {
+          append(`<div class="log-entry"><span class="error">✗ ${escapeHtml(evt.message)}</span></div>`);
+          status.innerHTML = '<span class="error">Error.</span>';
+        }
+      }
+    }
+  } catch (err) {
+    output.innerHTML = `<span class="error">✗ ${escapeHtml(err.message)}</span>`;
+    status.innerHTML = '<span class="error">Error.</span>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run';
+  }
+}
+
+// ── Delete all ────────────────────────────────────────────────────────────────
+
+document.getElementById('deleteAllBtn').addEventListener('click', async () => {
+  const res = await fetch('/api/documents');
+  const docs = await res.json();
+  const count = docs.length;
+  if (!count) { alert('Corpus is already empty.'); return; }
+  if (!confirm(`Delete all ${count} document${count > 1 ? 's' : ''} and their annotations? This cannot be undone.`)) return;
+  try {
+    const r = await fetch('/api/corpus', { method: 'DELETE' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    loadDocuments();
+  } catch (err) {
+    alert('Delete failed: ' + err.message);
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+loadDocuments();
+</script>
+
+</body>
+</html>
