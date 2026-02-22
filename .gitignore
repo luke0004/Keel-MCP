@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.DS_Store
+keel.db
+keel.db-shm
+keel.db-wal
+coverage/
+.vscode/
+claude_desktop_config.json
