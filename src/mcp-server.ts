@@ -24,22 +24,26 @@ import { logActivityToDB } from "./activity.js";
 // Background sync helper
 // ---------------------------------------------------------------------------
 
-/** Push dirty rows for any schema to Supabase in the background (fire-and-forget). */
+/** Push dirty rows for any schema to Supabase in the background (fire-and-forget).
+ *
+ * db.close() is deferred to the Promise's .finally() so SyncCoordinator has
+ * time to mark rows as clean after the Supabase HTTP call returns.
+ * Closing in a try/finally block would shut the DB before push() completes.
+ */
 function pushSchemaBackground(schema: typeof CorpusSchema) {
   config();
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) return;
   const db = getDB();
-  try {
-    const transport = new SupabaseTransport(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_KEY,
-      schema.tableName,
-      schema.jsonFields,
-    );
-    new SyncCoordinator(db, transport, schema).push().catch(() => {});
-  } finally {
-    db.close();
-  }
+  const transport = new SupabaseTransport(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY,
+    schema.tableName,
+    schema.jsonFields,
+  );
+  new SyncCoordinator(db, transport, schema)
+    .push()
+    .catch(() => {})
+    .finally(() => db.close());
 }
 
 export function pushDocumentsBackground()   { pushSchemaBackground(CorpusSchema); }
@@ -111,14 +115,12 @@ export async function handleToolCall(
         .run(id, parsed.title, parsed.body, JSON.stringify(parsed.tags), JSON.stringify([]), null, parsed.wind_speed, now);
     } finally { db.close(); }
 
-    config();
-    const db2 = getDB();
-    try {
-      if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-        const t = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, LogbookSchema.tableName, LogbookSchema.jsonFields);
-        new SyncCoordinator(db2, t, LogbookSchema).push().catch(() => {});
-      }
-    } finally { db2.close(); }
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+      config();
+      const db2 = getDB();
+      const t = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, LogbookSchema.tableName, LogbookSchema.jsonFields);
+      new SyncCoordinator(db2, t, LogbookSchema).push().catch(() => {}).finally(() => db2.close());
+    }
 
     logActivityToDB({ tool: name, params, resultSummary: `Logged entry "${parsed.title}" (id: ${id})` });
     return { content: [{ type: "text" as const, text: "Log saved and syncing..." }] };
@@ -148,14 +150,12 @@ export async function handleToolCall(
         .run(id, parsed.key, parsed.value, "keel-mcp", JSON.stringify(parsed.tags), 1.0, null, now);
     } finally { db.close(); }
 
-    config();
-    const db2 = getDB();
-    try {
-      if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-        const t = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, AgentMemorySchema.tableName, AgentMemorySchema.jsonFields);
-        new SyncCoordinator(db2, t, AgentMemorySchema).push().catch(() => {});
-      }
-    } finally { db2.close(); }
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+      config();
+      const db2 = getDB();
+      const t = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, AgentMemorySchema.tableName, AgentMemorySchema.jsonFields);
+      new SyncCoordinator(db2, t, AgentMemorySchema).push().catch(() => {}).finally(() => db2.close());
+    }
 
     logActivityToDB({ tool: name, params, resultSummary: `Remembered: ${parsed.key} = "${parsed.value}"` });
     return { content: [{ type: "text" as const, text: `Fact '${parsed.key}' remembered.` }] };
