@@ -18,6 +18,7 @@ export function initSchema(db: Database.Database, schema: SyncSchema) {
     .map(([col, type]) => `${col} ${type}`)
     .join(", ");
 
+  // Create table if it doesn't exist
   db.exec(`
     CREATE TABLE IF NOT EXISTS ${tableName} (
       id TEXT PRIMARY KEY,
@@ -28,6 +29,26 @@ export function initSchema(db: Database.Database, schema: SyncSchema) {
       updated_at INTEGER
     );
   `);
+
+  // Migrate: add any columns missing from tables created by older schema versions.
+  // SQLite's ALTER TABLE ADD COLUMN is safe to run on existing tables.
+  const existing = new Set(
+    (db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[])
+      .map(r => r.name)
+  );
+
+  const syncCols: Record<string, string> = {
+    field_timestamps: "TEXT",
+    is_dirty:         "INTEGER DEFAULT 1",
+    last_synced_at:   "TEXT",
+    updated_at:       "INTEGER",
+  };
+
+  for (const [col, type] of Object.entries({ ...columnDefs, ...syncCols })) {
+    if (!existing.has(col)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${col} ${type}`);
+    }
+  }
 }
 
 /**
