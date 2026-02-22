@@ -1,6 +1,8 @@
 # Keel-MCP
 
-**A local-first AI research engine.** Upload a text corpus, connect any language model, and let it read, search, and annotate your documents — entirely on your own machine. Annotations sync to Supabase when you're ready to share with a team.
+Keel-MCP is a local-first, LLM-native sync engine that lets AI agents operate on structured data offline and merge safely when connectivity returns.
+
+Proof-of-Concept and Illustration: **A local-first AI research engine.** Upload a text corpus, connect any language model, and let it read, search, and annotate your documents — entirely on your own machine. Annotations sync to Supabase when you're ready to share with a team.
 
 ---
 
@@ -31,9 +33,11 @@ Both interfaces share the same tool set. Switch models without changing anything
 | CRDT annotation model (LLM + human, append-only, never overwrites) | ✅ |
 | Live agent activity log (cross-process, SQLite WAL) | ✅ |
 | Agent memory (`remember_fact`, `recall_fact`) | ✅ |
-| Supabase sync infrastructure (push/pull, per-schema tokens, conflict resolution) | ✅ |
+| Supabase sync — push/pull for corpus + annotations, dirty-count badge, ↑↓ Sync button | ✅ |
+| Auto-migration of missing SQLite columns on startup | ✅ |
 | Batch annotation across corpus | 🔜 |
-| Supabase sync activated for corpus + annotations | 🔜 |
+| Retry queue with exponential backoff for failed pushes | 🔜 |
+| Persistent audit log (beyond 100-row live view) | 🔜 |
 
 ---
 
@@ -156,6 +160,12 @@ SUPABASE_KEY=your-service-role-key
 ```
 
 The sync engine uses per-schema server-change tokens, last-write-wins conflict resolution, and union-set merge for array fields (tags). Annotations use a separate sync token so document pulls and annotation pulls don't interfere.
+
+Every document upload and every annotation write triggers a background push automatically. The **↑↓ Sync** button in the web UI runs a full push+pull for both tables and shows a live dirty-count badge. The schema is self-healing: missing columns are added via `ALTER TABLE` on every startup, so older `keel.db` files upgrade automatically.
+
+**Known limitations (roadmap items):**
+- Push failures are silently retried on the next write. A retry queue with exponential backoff would make this robust under extended network outages.
+- The live activity log is capped at 100 rows for dashboard performance. A persistent append-only audit log is needed for reproducible research workflows.
 
 ---
 
