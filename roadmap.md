@@ -403,49 +403,35 @@ Named after the strangler fig, which grows around an existing tree until the ori
 
 The legacy system is never "migrated." It is made irrelevant incrementally.
 
-### 6f · Medical and clinical data gateway
+### 6f · Database reanimation — a theoretical framework
 
-The specific challenge a retiring cardiologist faces: decades of patient records spread across three separate systems — a patient records database, a PACS imaging archive (DICOM), and one or more ECG databases — from different vendors, with different patient ID formats, accumulated across software migrations. Unifying them per patient is a years-long project by conventional means. Keel approaches it differently: the AI reads across all three systems simultaneously and assembles a unified patient view without requiring any database migration.
+> *This section describes a conceptual direction rather than a planned feature. Medical and clinical implementations in particular carry regulatory obligations — GDPR, HIPAA, MDR — that are beyond the scope of a general-purpose open-source tool. The principle is recorded here because it is architecturally sound and may inform future work or specialised forks.*
 
-**Source connectors for clinical data:**
+Most accumulated institutional data is not lost — it is inert. It exists in databases that are technically running, correctly backed up, and completely inaccessible to any analytical query more sophisticated than the application that created them. The software that gave the data meaning has been retired, replaced, or migrated away from, leaving behind tables whose column names are abbreviations no one remembers and whose records are linked by ID formats that shifted three times across three vendor transitions.
 
-| Connector | Protocol / Format | System |
-|---|---|---|
-| `DICOMConnector` | DICOM C-FIND / DICOMweb (WADO-RS) | PACS servers (Agfa, Sectra, Orthanc, dcm4chee) |
-| `FHIRConnector` | HL7 FHIR R4 REST API | Modern EHR systems (Epic, Meditech Expanse, i.s.h.med) |
-| `HL7v2Connector` | HL7 v2 pipe-delimited messages | Legacy hospital information systems |
-| `ECGConnector` | GE MUSE XML, Philips XML, SCP-ECG | Cardiology workstations |
-| `SQLConnector` | JDBC / ODBC | Any relational patient database |
+This is the situation facing a retiring cardiologist: decades of patient records distributed across a patient database, a PACS imaging archive (DICOM), and multiple ECG databases from different manufacturers, accumulated across equipment generations. Each system is internally consistent. Across systems, the same patient may appear as `Müller, Hans Georg`, `Hans Müller`, and `H.G. Müller`; as patient ID `00234`, `PT-234`, and `MUE-1945-234`; with date of birth `15.03.1945`, `1945-03-15`, and `450315`. No migration was ever completed. No unified view exists. By conventional means, constructing one is a multi-year project.
 
-The DICOM connector reads **metadata only** by default (PatientID, PatientName, StudyDate, Modality, AccessionNumber) — images are not ingested into Keel, preserving storage and performance. Image retrieval is triggered on demand per study.
+**The underlying principle — three problems, one engine:**
 
-**Patient record linkage:**
+The cardiologist's situation is not unique to medicine. It is the generic condition of any institution that has outlived more than one software generation. The three problems it exemplifies are separable and general:
 
-The hard problem is identity resolution across systems. The same patient may appear as:
-- `Müller, Hans Georg` / `Hans Müller` / `H.G. Müller`
-- Patient ID `00234` / `PT-234` / `MUE-1945-234`
-- Date of birth `15.03.1945` / `1945-03-15` / `450315`
+1. **Schema amnesia** — meaning has decoupled from structure. Column names, table relationships, and value conventions are no longer self-documenting. An LLM reading raw samples of the data can reconstruct probable meaning better than a migration consultant reading the same data cold — because the model has internalized the conventions of every domain it has been trained on. It recognizes that `GEB_DAT` is *Geburtsdatum*, that `0012345` and `PT-12345` are the same identifier in different eras, that a column of values between 40 and 180 in a cardiology context is almost certainly heart rate.
 
-Classical probabilistic record linkage (Fellegi-Sunter) requires hand-tuned field weights. Keel uses the LLM instead:
+2. **Identity fragmentation** — the same real-world entity (a patient, a specimen, a legal case, a musical work) has acquired different identifiers in different systems, and no authoritative mapping exists. Classical probabilistic record linkage requires hand-tuned weights and clean training data. An LLM given two candidate records can reason about whether they represent the same entity — weighing name variants, format conventions, and domain-specific plausibility — and return a confidence score with an explanation. The human resolves ambiguous cases; the model handles the volume.
 
-1. For each candidate pair of records (one from each system), the model is given the raw field values and asked: *"Are these the same patient? Confidence 0–1, reasoning."*
-2. High-confidence matches (>0.95) are linked automatically
-3. Low-confidence matches (<0.75) are surfaced in Review Mode (Phase 4e) for the clinician to resolve — the same human-in-the-loop triage interface used for annotation review
-4. Each confirmed linkage teaches the system the ID format conventions specific to this institution, improving future matches
-5. The unified patient record — demographic data, linked DICOM studies, ECG measurements, clinical notes — becomes a single Keel document queryable by AI agents
+3. **Query isolation** — each system can only answer questions about itself. The questions that matter — the ones that drove the data collection in the first place — span systems. A cardiologist's research question joins ECG findings, imaging studies, and clinical outcomes. A legal researcher's question joins case records, statute versions, and court calendars. A musicologist's question joins manuscript sources, first editions, and contemporary reception. None of these questions can be answered by any single legacy database. They require a unified corpus.
 
-**What becomes possible after linkage:**
+**What Keel provides as a foundation:**
 
-Once records are unified, AI agents can answer questions that were previously impossible without manual chart review:
-- *"Find all patients with a QTc >480ms on ECG who also had a preserved ejection fraction on echo"*
-- *"Which patients had a change in axis deviation between their 2015 and 2020 ECGs?"*
-- *"Summarise the clinical trajectory of patients with both a LBBB finding and a subsequent TAVI procedure"*
+Keel does not solve these problems for any specific domain. What it provides is the substrate on which domain-specific solutions can be built:
 
-These queries span three databases, two imaging modalities, and a decade of records. Keel makes them a single `runQuery()` call.
+- A corpus model that is schema-agnostic (Phase 3e's `ProjectConfig` can describe any document structure)
+- An AI-driven ingestion layer that can be guided by LLM-generated schema maps (Phase 6e)
+- A human-in-the-loop review interface for resolving low-confidence decisions (Phase 4e)
+- An append-only annotation model that records the reasoning behind linkage decisions without overwriting source data
+- A local-first architecture that keeps sensitive data within institutional boundaries
 
-**Privacy and compliance:**
-
-Local-first architecture is not an incidental feature here — it is the compliance strategy. Patient data never leaves the institution's network. The audit log (Phase 3d) becomes a GDPR/HIPAA access log. Anonymisation can be applied at the ingestion boundary for any records used in research contexts: Keel strips or pseudonymises identifying fields before they enter the AI-accessible corpus, while the operational database remains unchanged.
+The Strangler Pattern (Phase 6e) applies here at the conceptual level too: Keel does not replace the legacy systems. It wraps them with an AI-legible interface, accumulates understanding, and makes their combined contents queryable — leaving the originals untouched until the institution is ready, if ever, to retire them.
 
 ---
 
