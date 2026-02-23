@@ -376,6 +376,77 @@ No manual upload step. The researcher's role shifts from data preparation to int
 
 For institutions with write-capable APIs (SharePoint, DSpace with REST, Nextcloud), Keel can push annotations back to the source system as metadata — attaching LLM and human annotations to the original file record. The document management system becomes AI-enriched without any change to the researchers' existing workflows; they continue using the tools they know, and the AI layer is invisible infrastructure.
 
+### 6e · AI-driven schema discovery
+
+Legacy databases accumulate entropy. Column names are abbreviations from a system no longer in use. Patient IDs appear as `12345` in one database, `PT-12345` in another, and `0012345` in a third — the same person, three formats, no documentation explaining why. After software migrations, the people who knew the schema are retired or gone. Reverse-engineering meaning from structure alone is exactly what LLMs are good at.
+
+**Discovery pipeline:**
+
+1. Keel connects to the legacy database in **read-only mode** — no writes, no risk
+2. An LLM samples a representative slice of each table: column names, value distributions, min/max, nullability, and 20–50 example rows
+3. The model produces a candidate schema map: human-readable field labels, inferred data types, probable foreign key relationships, and detected format variants (e.g. *"patient_id appears in three formats: plain integer, `PT-` prefixed, and zero-padded — likely the same entity across three migration epochs"*)
+4. The schema map is presented to the domain expert for review and correction — the expert provides ground truth, the model provides the first draft
+5. Approved mappings become a `ProjectConfig` (Phase 3e) that drives ingestion and the UI — no manual config file authoring needed
+
+**Format normalisation:**
+
+Once the schema is understood, Keel applies normalisation rules at ingestion time — transforming `PT-12345`, `0012345`, and `12345` into a canonical form before they enter SQLite. The legacy database is never touched; all normalisation happens in the ingestion layer.
+
+**The Strangler Pattern:**
+
+Named after the strangler fig, which grows around an existing tree until the original is no longer load-bearing. Applied here:
+
+1. **Wrap** — Keel deploys alongside the legacy system. All queries continue to hit the original database. Keel reads from it in parallel, building its own unified corpus
+2. **Route** — new analytical queries are routed through Keel's MCP interface; the legacy system handles operational queries it was built for
+3. **Enrich** — Keel's AI annotation layer adds value the legacy system never had: semantic search, cross-database linkage, LLM analysis
+4. **Retire** — as confidence in Keel's unified corpus grows, the legacy system is gradually decommissioned. Migration risk is zero because nothing was migrated — the data was re-read and re-indexed rather than moved
+
+The legacy system is never "migrated." It is made irrelevant incrementally.
+
+### 6f · Medical and clinical data gateway
+
+The specific challenge a retiring cardiologist faces: decades of patient records spread across three separate systems — a patient records database, a PACS imaging archive (DICOM), and one or more ECG databases — from different vendors, with different patient ID formats, accumulated across software migrations. Unifying them per patient is a years-long project by conventional means. Keel approaches it differently: the AI reads across all three systems simultaneously and assembles a unified patient view without requiring any database migration.
+
+**Source connectors for clinical data:**
+
+| Connector | Protocol / Format | System |
+|---|---|---|
+| `DICOMConnector` | DICOM C-FIND / DICOMweb (WADO-RS) | PACS servers (Agfa, Sectra, Orthanc, dcm4chee) |
+| `FHIRConnector` | HL7 FHIR R4 REST API | Modern EHR systems (Epic, Meditech Expanse, i.s.h.med) |
+| `HL7v2Connector` | HL7 v2 pipe-delimited messages | Legacy hospital information systems |
+| `ECGConnector` | GE MUSE XML, Philips XML, SCP-ECG | Cardiology workstations |
+| `SQLConnector` | JDBC / ODBC | Any relational patient database |
+
+The DICOM connector reads **metadata only** by default (PatientID, PatientName, StudyDate, Modality, AccessionNumber) — images are not ingested into Keel, preserving storage and performance. Image retrieval is triggered on demand per study.
+
+**Patient record linkage:**
+
+The hard problem is identity resolution across systems. The same patient may appear as:
+- `Müller, Hans Georg` / `Hans Müller` / `H.G. Müller`
+- Patient ID `00234` / `PT-234` / `MUE-1945-234`
+- Date of birth `15.03.1945` / `1945-03-15` / `450315`
+
+Classical probabilistic record linkage (Fellegi-Sunter) requires hand-tuned field weights. Keel uses the LLM instead:
+
+1. For each candidate pair of records (one from each system), the model is given the raw field values and asked: *"Are these the same patient? Confidence 0–1, reasoning."*
+2. High-confidence matches (>0.95) are linked automatically
+3. Low-confidence matches (<0.75) are surfaced in Review Mode (Phase 4e) for the clinician to resolve — the same human-in-the-loop triage interface used for annotation review
+4. Each confirmed linkage teaches the system the ID format conventions specific to this institution, improving future matches
+5. The unified patient record — demographic data, linked DICOM studies, ECG measurements, clinical notes — becomes a single Keel document queryable by AI agents
+
+**What becomes possible after linkage:**
+
+Once records are unified, AI agents can answer questions that were previously impossible without manual chart review:
+- *"Find all patients with a QTc >480ms on ECG who also had a preserved ejection fraction on echo"*
+- *"Which patients had a change in axis deviation between their 2015 and 2020 ECGs?"*
+- *"Summarise the clinical trajectory of patients with both a LBBB finding and a subsequent TAVI procedure"*
+
+These queries span three databases, two imaging modalities, and a decade of records. Keel makes them a single `runQuery()` call.
+
+**Privacy and compliance:**
+
+Local-first architecture is not an incidental feature here — it is the compliance strategy. Patient data never leaves the institution's network. The audit log (Phase 3d) becomes a GDPR/HIPAA access log. Anonymisation can be applied at the ingestion boundary for any records used in research contexts: Keel strips or pseudonymises identifying fields before they enter the AI-accessible corpus, while the operational database remains unchanged.
+
 ---
 
 ## 🌐 Potential applications
@@ -390,3 +461,4 @@ For institutions with write-capable APIs (SharePoint, DSpace with REST, Nextclou
 | **Historical linguistics** | language, period, source, region | web publication, JSON export for R/Python |
 | **Agent memory** | key, value, agent_id, context_tags | webhook to agent orchestrator, JSON backup |
 | **Technical maintenance** | asset, location, fault type, technician | webhook to CMMS, PDF work order |
+| **Clinical / cardiology** | patient_id, dob, modality, study_date, findings | FHIR export, PDF case summary, anonymised research dataset |
