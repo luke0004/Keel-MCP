@@ -130,6 +130,20 @@ define_field(name: "jurisdiction", type: "text", label: "Jurisdiction", searchab
 
 An agent encountering data it cannot categorize can propose a new field. The tool adds the SQLite column (auto-migration), updates `ProjectConfig`, and the agent immediately starts populating it. The schema grows organically as research deepens — no human setup required. A proposal/approval flow (human confirms before the column is created) is optional but recommended for shared projects.
 
+### 3h · PDF ingestion pipeline
+
+Most Digital Humanities and Legal documents exist only as PDFs. The current ingestion pipeline accepts `.md` and `.txt` only, which means researchers must pre-convert before upload — an unnecessary friction point that blocks adoption in the two highest-value domains.
+
+A local-first pipeline that converts PDF to structured Markdown at upload time, with no external API calls and no data leaving the machine:
+
+- **PDF-to-Markdown conversion** at ingest time — runs server-side on upload, before the document is written to SQLite
+- **Structure preservation**: tables converted to Markdown tables, footnotes preserved as inline references, headers mapped to `#` / `##` hierarchy
+- **Citation extraction**: detect and tag bibliographic references (e.g. author–date, footnote numbers) so `analyze_document` can locate them by term
+- **Multi-column layout handling**: reflow two-column academic paper layouts into a single reading order before storage
+- **Drag-and-drop `.pdf` support** in the upload UI alongside existing `.md` / `.txt`
+- **Metadata extraction**: title, author, and date read from PDF XMP/DocInfo metadata and pre-filled into the upload form
+- Candidate libraries: `pdfjs-dist` (pure JS, no native deps) for text extraction; `pdf-parse` as fallback; layout analysis via heuristic column detection
+
 ---
 
 ## 🔭 Phase 4 — Analysis depth
@@ -147,6 +161,27 @@ Filter search results and annotations by date range. Track how a concept (e.g. *
 
 ### 4d · Named entity extraction
 Add a dedicated MCP tool `extract_entities` that instructs the model to identify composers, critics, venues, and works as structured fields — stored as tags or in a dedicated entity table for later graph analysis.
+
+### 4e · Annotation Review Mode
+
+A dedicated review UI where a researcher can rapidly triage agent annotations across the entire corpus — accepting, rejecting, or editing each one — without leaving the browser. Designed for the "batch annotate then curate" workflow: the model runs first, the human refines.
+
+**Interface:**
+- Side-by-side split: document text on the left, annotation queue on the right
+- Each pending annotation shows: tag, full annotation text, passage excerpt (the text span that triggered it), model ID, and timestamp
+- Three keyboard-driven actions: **Accept** (`A` or `→`) · **Reject** (`R` or `Delete`) · **Edit** (`E` — opens inline textarea, saves on `Enter`)
+- Accepted annotations are marked `reviewed: true` in `corpus_annotations`; rejected annotations are soft-deleted (flagged, not removed, so sync history is preserved)
+- Filter queue by tag, model, or date range — useful for reviewing a single batch run in isolation
+- Progress counter: `12 / 47 reviewed` with a compact progress bar
+
+**Fine-tuning pathway:**
+
+Accepted annotations — where the researcher confirmed or corrected the model's output — constitute a labeled dataset of (document passage, annotation) pairs specific to the researcher's domain. Keel can export this as fine-tuning data:
+
+- `GET /api/export/finetune?tag=kantian-sublime&format=jsonl` → OpenAI / Ollama fine-tuning JSONL
+- Each row: `{ "prompt": "<passage>", "completion": "<accepted annotation>" }` (or chat format for instruction-tuned models)
+- Only `reviewed: true` rows are included; edited annotations use the human-corrected text, not the original LLM output
+- Enables researchers to fine-tune a smaller local model (e.g. `qwen2.5:7b`) on their own domain expertise, progressively improving batch annotation quality with each review cycle
 
 ---
 
