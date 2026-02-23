@@ -183,6 +183,49 @@ Accepted annotations — where the researcher confirmed or corrected the model's
 - Only `reviewed: true` rows are included; edited annotations use the human-corrected text, not the original LLM output
 - Enables researchers to fine-tune a smaller local model (e.g. `qwen2.5:7b`) on their own domain expertise, progressively improving batch annotation quality with each review cycle
 
+### 4f · In-document annotation view
+
+Today annotations live in a separate panel below the document list. This phase links every annotation back to the exact passage that triggered it — making the connection between model output and source text visible and interactive.
+
+**Schema additions:**
+- `source_passage` column in `corpus_annotations` — the verbatim sentence or span extracted by `analyze_document` that led to the annotation; stored at write time by `annotate_document`
+- `confidence` column — a 0–1 score returned by the model alongside the annotation text (prompted explicitly, or derived from the passage match rank from `analyze_document`)
+
+**Document reader:**
+- Clicking a document title opens a full-text reader panel below it (or in a modal) — the complete document text, rendered as Markdown
+- Annotated spans are highlighted with a dotted underline in the color of their tag; hovering reveals a tooltip with the annotation text and confidence score
+- Clicking the underlined span or clicking the annotation in the list scrolls the other side to match — bidirectional linking
+- Confidence is displayed as a subtle badge (e.g. `0.87`) next to the annotation tag; low-confidence annotations (<0.6) are flagged with a amber indicator to prioritise human review
+
+**Annotation card:**
+Each annotation in the side panel shows three things:
+1. The annotation text (the model's interpretation)
+2. The source passage in a styled blockquote — the exact sentence(s) the model read before writing the annotation
+3. Confidence score + model ID + timestamp
+
+This makes it immediately possible to judge whether the model understood the passage correctly — without opening the original document separately.
+
+### 4g · Active learning feedback loop
+
+4e's fine-tuning export is batch and manual — the researcher runs a review, exports JSONL, and fine-tunes offline. Active learning closes the loop incrementally: every correction the researcher makes is automatically captured as a training signal, and the local model improves continuously without a separate export step.
+
+**How it works:**
+
+1. The researcher edits an annotation in Review Mode (4e) — the original LLM text and the corrected human text are both stored (`corrects_id` already links them in the existing CRDT schema)
+2. The correction is automatically added to a local training queue (`correction_queue` table) — no action required from the researcher
+3. When the queue reaches a configurable threshold (e.g. 20 corrections), Keel prompts: *"You have 20 corrections queued. Fine-tune the local model now?"*
+4. On confirmation, Keel exports the queue as JSONL and invokes the Ollama fine-tuning API (`POST /api/train`) or shells out to `ollama create` — locally, no data leaves the machine
+5. The newly fine-tuned model appears in the datalist and is suggested as the default for the next batch run on the same tag
+6. After training, the queue is flushed; corrections accumulate again toward the next cycle
+
+**Why this matters:**
+
+The correction pairs are high-signal because they capture exactly where the model fails for *this researcher's* domain and interpretive standards — not a generic benchmark. A musicologist correcting "Hanslick's use of 'erhaben' is rhetorical" to "Hanslick inverts the Kantian sublime to argue for musical autonomy" is encoding domain expertise that no pre-training dataset contains. After three or four cycles the local model begins to produce annotations in the researcher's own analytical register.
+
+**Error pattern surfacing:**
+- Group corrections by tag and model to identify systematic failure modes (e.g. the model consistently misidentifies ironic uses of *erhaben*)
+- Surface these as a "Model diagnostics" panel alongside the review queue
+
 ---
 
 ## 🔭 Phase 5 — Outlet System
