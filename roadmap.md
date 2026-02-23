@@ -226,6 +226,24 @@ The correction pairs are high-signal because they capture exactly where the mode
 - Group corrections by tag and model to identify systematic failure modes (e.g. the model consistently misidentifies ironic uses of *erhaben*)
 - Surface these as a "Model diagnostics" panel alongside the review queue
 
+### 4h · Corpus graph
+
+A visual map of the corpus where relationships defined by shared tags and annotations become navigable structure. Instead of a flat list of documents, the researcher sees a topology — clusters of texts that the model has linked through a common concept, and unexpected bridges between documents that share an annotation tag but belong to different authors or decades.
+
+**Two complementary views:**
+
+- **Document graph** — nodes are documents (sized by annotation count), edges connect documents that share one or more annotation tags. A document heavily annotated with `kantian-sublime` and `nature-metaphor` will sit at the intersection of two visible clusters, revealing its thematic centrality within the corpus
+- **Tag graph** — nodes are tags (sized by document count), edges weighted by how often two tags co-occur on the same document. Reveals which concepts travel together — e.g. if `erhabenheit` and `tonalität` frequently co-occur, a research hypothesis emerges without the researcher having to formulate it first
+
+**Interaction:**
+- Click a node to open the document or filter to all documents with that tag
+- Hover an edge to see the list of shared documents or co-occurring annotations
+- Filter by date range to watch the tag topology evolve diachronically (links to 4c)
+- Toggle between force-directed layout (organic clustering) and timeline layout (documents ordered on a horizontal time axis, edges arcing between them)
+- Nodes colored by author, tag family, or confidence quartile
+
+**Implementation:** rendered client-side with D3.js or Cytoscape.js — no server changes needed beyond a `GET /api/graph` endpoint that returns nodes and edges derived from `corpus_annotations`.
+
 ---
 
 ## 🔭 Phase 5 — Outlet System
@@ -311,6 +329,52 @@ Purpose-built adapters that speak the native format of domain databases. Trigger
 5. `export_pdf` generates a formatted field report for the expedition funder
 
 No manual data re-entry. The annotation work done for research *is* the submission.
+
+---
+
+## 🔭 Phase 6 — Institutional data gateway
+
+Phases 1–5 assume data flows in one direction: a researcher uploads documents locally, annotates them, and optionally syncs to Supabase or exports to a domain database. Phase 6 inverts this. Keel becomes a gateway that reaches into existing institutional repositories — file servers, archives, document management systems — and opens their data to AI agents for the first time.
+
+Most institutional knowledge is dark: stored on NAS drives, university file servers, or legacy content management systems, correctly preserved but never analyzed at scale. The bottleneck isn't storage or digitization — it's the absence of an AI-accessible interface. Keel fills that gap without requiring institutions to migrate or restructure their data.
+
+### 6a · Source connectors
+
+Pull-based ingestion adapters that connect to institutional data infrastructure. Each connector watches a source for new or changed files and ingests them into the local corpus on a schedule or on demand.
+
+| Connector | Protocol | Common deployments |
+|---|---|---|
+| `FilesystemConnector` | POSIX / SMB / NFS | University NAS, research institute file shares |
+| `WebDAVConnector` | WebDAV | Nextcloud, ownCloud, institutional intranets |
+| `S3Connector` | S3-compatible API | AWS S3, MinIO, Wasabi, Cloudflare R2 |
+| `OAIConnector` | OAI-PMH | DSpace, EPrints, Fedora Commons, institutional repositories |
+| `SharePointConnector` | Microsoft Graph API | Law firms, government agencies, large universities |
+| `FTPConnector` | FTP / SFTP | Legacy archives, museum digitization projects |
+
+Connectors are configured in `keel.config.json` with credentials, polling interval, and file type filters. Ingestion runs the existing PDF pipeline (Phase 3h) automatically on binary files.
+
+### 6b · Incremental sync
+
+Connectors do not re-ingest the entire source on each run. They track a high-water mark (last-modified timestamp or ETag) and pull only new or changed files — the same delta-token pattern used for Supabase sync, applied to the ingestion direction.
+
+- Deleted files at the source are soft-deleted in the corpus (flagged, not removed), preserving annotations
+- Renamed or moved files are reconciled by content hash, not path, so annotations survive reorganisations
+- Conflict: if a source file changes after the researcher has annotated it locally, Keel flags the document as `source_changed` and surfaces it for review
+
+### 6c · Scheduled annotation
+
+Combine source connectors with batch annotation (Phase 3a) into a fully automated pipeline:
+
+1. Connector ingests new documents from the file server overnight
+2. Batch annotator runs automatically on all untagged documents at a configured time
+3. Researcher arrives in the morning to a populated Review Mode queue (Phase 4e) — new documents already analyzed, annotations awaiting human triage
+4. Approved annotations are pushed back to Supabase (Phase 3b) and to institutional systems via Outlet adapters (Phase 5)
+
+No manual upload step. The researcher's role shifts from data preparation to intellectual judgment.
+
+### 6d · Bidirectional institutional sync
+
+For institutions with write-capable APIs (SharePoint, DSpace with REST, Nextcloud), Keel can push annotations back to the source system as metadata — attaching LLM and human annotations to the original file record. The document management system becomes AI-enriched without any change to the researchers' existing workflows; they continue using the tools they know, and the AI layer is invisible infrastructure.
 
 ---
 
