@@ -465,6 +465,7 @@ app.post('/api/run', async (req: any, res: any) => {
     userMessage,
     model = 'qwen2.5:7b',
     ollamaUrl = 'http://localhost:11434/v1/chat/completions',
+    apiKey,
   } = req.body ?? {};
 
   if (!userMessage) return res.status(400).json({ error: 'userMessage is required' });
@@ -484,7 +485,7 @@ app.post('/api/run', async (req: any, res: any) => {
     for (let step = 0; step < 10; step++) {
       const llmRes = await fetch(ollamaUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ollama' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey ?? 'ollama'}` },
         body: JSON.stringify({ model, tools: OPENAI_TOOLS, messages }),
       });
 
@@ -526,6 +527,160 @@ app.post('/api/run', async (req: any, res: any) => {
   }
 
   send({ type: 'done' });
+  res.end();
+});
+
+// ---------------------------------------------------------------------------
+// Batch annotation runner — SSE stream
+//
+// POST /api/batch-run  { concept, tag, systemPrompt?, model?, ollamaUrl?, delayMs?, resume? }
+// Streams: started | progress | skipped | tool_call | tool_result | error | done
+// ---------------------------------------------------------------------------
+
+app.post('/api/batch-run', async (req: any, res: any) => {
+  const {
+    concept,
+    tag,
+    systemPrompt,
+    model = 'qwen2.5:7b',
+    ollamaUrl = 'http://localhost:11434/v1/chat/completions',
+    apiKey,
+    delayMs = 500,
+    resume = true,
+  } = req.body ?? {};
+
+  if (!concept || !tag) return res.status(400).json({ error: 'concept and tag are required' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  const defaultSystemPrompt =
+    `You are analyzing a research corpus for the concept: "${concept}".\n\n` +
+    `For the document provided, you MUST:\n` +
+    `1. Call analyze_document with the document ID and relevant search terms\n` +
+    `2. Call annotate_document to write a structured observation with tag: "${tag}"\n\n` +
+    `Do NOT call read_corpus, search_corpus, or get_document.\n` +
+    `Use only the document ID given in the user message.`;
+
+  const sysPrompt = systemPrompt || defaultSystemPrompt;
+
+  // Fetch all docs ordered by updated_at ASC
+  let docs: { id: string; title: string }[];
+  {
+    const db = getDB();
+    try {
+      docs = db.prepare('SELECT id, title FROM corpus_documents ORDER BY updated_at ASC').all() as { id: string; title: string }[];
+    } finally {
+      db.close();
+    }
+  }
+
+  const total = docs.length;
+  send({ type: 'started', total });
+
+  let annotated = 0, skipped = 0, errors = 0;
+  let stopped = false;
+  res.on('close', () => { stopped = true; });
+
+  for (let i = 0; i < docs.length; i++) {
+    if (stopped) break;
+
+    const doc = docs[i]!;
+    const current = i + 1;
+
+    // Resume: skip docs already tagged
+    if (resume) {
+      const db = getDB();
+      try {
+        const existing = db.prepare(
+          'SELECT id FROM corpus_annotations WHERE document_id = ? AND tag = ? LIMIT 1'
+        ).get(doc.id, tag);
+        if (existing) {
+          send({ type: 'skipped', current, total, documentId: doc.id, title: doc.title });
+          skipped++;
+          continue;
+        }
+      } finally {
+        db.close();
+      }
+    }
+
+    send({ type: 'progress', current, total, documentId: doc.id, title: doc.title });
+
+    const messages: Record<string, unknown>[] = [
+      { role: 'system', content: sysPrompt },
+      {
+        role: 'user',
+        content: `Document ID: ${doc.id}\nTitle: ${doc.title}\n\nAnalyze this document for the concept "${concept}" and annotate with tag "${tag}".`,
+      },
+    ];
+
+    let didAnnotate = false;
+    try {
+      for (let step = 0; step < 6; step++) {
+        if (stopped) break;
+
+        const llmRes = await fetch(ollamaUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey ?? 'ollama'}` },
+          body: JSON.stringify({ model, tools: OPENAI_TOOLS, messages }),
+        });
+
+        if (!llmRes.ok) {
+          send({ type: 'error', documentId: doc.id, message: `LLM error ${llmRes.status}: ${await llmRes.text()}` });
+          errors++;
+          break;
+        }
+
+        const data = await llmRes.json() as {
+          choices: { message: { content: string; tool_calls?: { id: string; function: { name: string; arguments: string | Record<string, unknown> } }[] } }[];
+        };
+        const msg = data.choices[0]?.message;
+        if (!msg) {
+          send({ type: 'error', documentId: doc.id, message: 'Empty response from model' });
+          errors++;
+          break;
+        }
+        messages.push(msg as Record<string, unknown>);
+
+        if (!msg.tool_calls?.length) break;
+
+        for (const call of msg.tool_calls) {
+          let args: Record<string, unknown>;
+          try {
+            args = typeof call.function.arguments === 'string'
+              ? JSON.parse(call.function.arguments)
+              : (call.function.arguments as Record<string, unknown>);
+          } catch { args = {}; }
+
+          send({ type: 'tool_call', documentId: doc.id, name: call.function.name, args });
+
+          if (call.function.name === 'annotate_document') didAnnotate = true;
+
+          const result = await handleToolCall(call.function.name, args);
+          const text = result.content.map((c: { text?: string }) => c.text ?? '').join('\n');
+
+          send({ type: 'tool_result', documentId: doc.id, name: call.function.name, result: text.slice(0, 600) });
+
+          messages.push({ role: 'tool', tool_call_id: call.id, content: text });
+        }
+      }
+    } catch (error) {
+      send({ type: 'error', documentId: doc.id, message: (error as Error).message });
+      errors++;
+    }
+
+    if (didAnnotate) annotated++;
+
+    if (delayMs > 0 && i < docs.length - 1 && !stopped) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  send({ type: 'done', annotated, skipped, errors, total });
   res.end();
 });
 

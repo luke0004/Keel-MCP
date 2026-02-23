@@ -203,6 +203,21 @@
     .log-sql::before { content: 'SQL ▸ '; color: #37474f; }
 
     .empty-log { color: #546e7a; font-style: italic; }
+
+    /* ── Batch annotate ── */
+    .batch-controls { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-top: 0.9rem; }
+    .batch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .batch-status { font-size: 0.85rem; color: #888; }
+    .batch-progress-area { margin-top: 1rem; display: none; }
+    .batch-progress-area.active { display: block; }
+    .batch-progress-bar { width: 100%; height: 6px; border-radius: 3px; accent-color: #5c6bc0; margin-bottom: 0.5rem; }
+    .batch-doc-title { font-size: 0.85rem; color: #555; margin-bottom: 0.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .batch-counters { font-size: 0.82rem; color: #666; }
+    .batch-counters .ok  { color: #2e7d32; }
+    .batch-counters .sk  { color: #5c6bc0; }
+    .batch-counters .err { color: #c62828; }
+    button.stop { background: #546e7a; }
+    button.stop:hover { background: #37474f; }
   </style>
 </head>
 <body>
@@ -273,13 +288,79 @@
   <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap">
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">Model</label>
-      <input type="text" id="modelName" value="qwen2.5:7b" style="width:160px">
+      <input type="text" id="modelName" value="qwen2.5:7b" style="width:200px" list="ollamaModels">
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap">Endpoint</label>
+      <input type="text" id="runEndpoint" value="http://localhost:11434/v1/chat/completions" style="width:300px" placeholder="API base URL">
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap">API key</label>
+      <input type="password" id="runApiKey" placeholder="sk-… (leave blank for Ollama)" style="width:180px">
     </div>
     <button id="runBtn" onclick="runQuery()">▶ Run</button>
     <span id="runStatus" style="font-size:0.85rem; color:#888"></span>
   </div>
 
   <div id="runOutput" class="activity-panel" style="display:none; margin-top:1.2rem; margin-bottom:0"></div>
+</div>
+
+<!-- Batch Annotate -->
+<div class="card">
+  <h2>Batch Annotate</h2>
+
+  <div class="batch-grid">
+    <div>
+      <label>Concept <span style="color:#aaa">(what to look for)</span></label>
+      <input type="text" id="batchConcept" placeholder="e.g. das Erhabene, Natur, Harmonie">
+    </div>
+    <div>
+      <label>Tag <span style="color:#aaa">(applied to annotations)</span></label>
+      <input type="text" id="batchTag" placeholder="e.g. kantian-sublime">
+    </div>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem">
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap">Model</label>
+      <input type="text" id="batchModel" value="qwen2.5:7b" style="width:200px" list="ollamaModels">
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap">Endpoint</label>
+      <input type="text" id="batchEndpoint" value="http://localhost:11434/v1/chat/completions" style="width:300px" placeholder="API base URL">
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap">API key</label>
+      <input type="password" id="batchApiKey" placeholder="sk-… (leave blank for Ollama)" style="width:180px">
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <input type="checkbox" id="batchResume" checked style="width:auto">
+      <label for="batchResume" style="margin:0; font-size:0.88rem">Skip docs already annotated with this tag</label>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem">
+      <label style="margin:0; white-space:nowrap; font-size:0.88rem">Delay</label>
+      <input type="range" id="batchDelay" min="0" max="2000" step="100" value="500" style="width:120px">
+      <span id="batchDelayLabel" style="font-size:0.85rem; color:#888; min-width:3rem">500 ms</span>
+    </div>
+  </div>
+
+  <div class="batch-controls">
+    <button id="batchRunBtn" onclick="batchRun()">▶ Batch Run</button>
+    <button id="batchStopBtn" class="stop" style="display:none" onclick="batchStop()">■ Stop</button>
+    <span id="batchStatus" class="batch-status"></span>
+  </div>
+
+  <div class="batch-progress-area" id="batchProgressArea">
+    <progress class="batch-progress-bar" id="batchProgressBar" value="0" max="100"></progress>
+    <div class="batch-doc-title" id="batchDocTitle"></div>
+    <div class="batch-counters">
+      <span class="ok" id="batchAnnotated">✓ 0 annotated</span> ·
+      <span class="sk" id="batchSkipped">⟲ 0 skipped</span> ·
+      <span class="err" id="batchErrors">✗ 0 errors</span>
+    </div>
+  </div>
+
+  <div id="batchOutput" class="activity-panel" style="display:none; margin-top:1.2rem; margin-bottom:0"></div>
 </div>
 
 <!-- Connect your LLM -->
@@ -347,6 +428,32 @@
     <li style="padding:1rem; color:#aaa; text-align:center">Loading…</li>
   </ul>
 </div>
+
+<datalist id="ollamaModels">
+  <!-- Ollama / local -->
+  <option value="qwen2.5:7b">
+  <option value="qwen2.5:14b">
+  <option value="qwen2.5:32b">
+  <option value="llama3.1:8b">
+  <option value="llama3.2:3b">
+  <option value="llama3.3:70b">
+  <option value="mistral:7b">
+  <option value="gemma3:4b">
+  <option value="gemma3:12b">
+  <option value="phi4:14b">
+  <!-- OpenAI -->
+  <option value="gpt-4o">
+  <option value="gpt-4o-mini">
+  <option value="o3-mini">
+  <option value="o1">
+  <!-- Anthropic -->
+  <option value="claude-opus-4-6">
+  <option value="claude-sonnet-4-6">
+  <option value="claude-haiku-4-5-20251001">
+  <!-- Google -->
+  <option value="gemini-2.0-flash">
+  <option value="gemini-1.5-pro">
+</datalist>
 
 <script>
 // ── File selection ────────────────────────────────────────────────────────────
@@ -711,6 +818,8 @@ async function runQuery() {
   const systemPrompt = document.getElementById('systemPrompt').value.trim();
   const userMessage  = document.getElementById('userMessage').value.trim();
   const model        = document.getElementById('modelName').value.trim() || 'qwen2.5:7b';
+  const ollamaUrl    = document.getElementById('runEndpoint').value.trim() || 'http://localhost:11434/v1/chat/completions';
+  const apiKey       = document.getElementById('runApiKey').value.trim() || null;
   const btn          = document.getElementById('runBtn');
   const status       = document.getElementById('runStatus');
   const output       = document.getElementById('runOutput');
@@ -730,7 +839,7 @@ async function runQuery() {
     const res = await fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ systemPrompt, userMessage, model }),
+      body: JSON.stringify({ systemPrompt, userMessage, model, ollamaUrl, apiKey }),
     });
 
     if (!res.ok) {
@@ -781,6 +890,135 @@ async function runQuery() {
   } finally {
     btn.disabled = false;
     btn.textContent = '▶ Run';
+  }
+}
+
+// ── Batch Annotate ────────────────────────────────────────────────────────────
+
+document.getElementById('batchDelay').addEventListener('input', function () {
+  document.getElementById('batchDelayLabel').textContent = this.value + ' ms';
+});
+
+let batchReader = null;
+
+function batchStop() {
+  if (batchReader) { batchReader.cancel(); batchReader = null; }
+}
+
+async function batchRun() {
+  const concept    = document.getElementById('batchConcept').value.trim();
+  const tag        = document.getElementById('batchTag').value.trim();
+  const model      = document.getElementById('batchModel').value.trim() || 'qwen2.5:7b';
+  const ollamaUrl  = document.getElementById('batchEndpoint').value.trim() || 'http://localhost:11434/v1/chat/completions';
+  const apiKey     = document.getElementById('batchApiKey').value.trim() || null;
+  const resume     = document.getElementById('batchResume').checked;
+  const delayMs    = Number(document.getElementById('batchDelay').value);
+
+  if (!concept) { alert('Please enter a concept.'); return; }
+  if (!tag)     { alert('Please enter a tag.'); return; }
+
+  const runBtn    = document.getElementById('batchRunBtn');
+  const stopBtn   = document.getElementById('batchStopBtn');
+  const statusEl  = document.getElementById('batchStatus');
+  const progress  = document.getElementById('batchProgressArea');
+  const bar       = document.getElementById('batchProgressBar');
+  const docTitle  = document.getElementById('batchDocTitle');
+  const cntAnn    = document.getElementById('batchAnnotated');
+  const cntSkip   = document.getElementById('batchSkipped');
+  const cntErr    = document.getElementById('batchErrors');
+  const output    = document.getElementById('batchOutput');
+
+  runBtn.disabled = true;
+  stopBtn.style.display = '';
+  statusEl.textContent = 'Starting…';
+  progress.classList.add('active');
+  output.style.display = 'block';
+  output.innerHTML = '';
+
+  let html = '';
+  let annCount = 0, skipCount = 0, errCount = 0, total = 0;
+
+  const append = (block) => { html += block; output.innerHTML = html; output.scrollTop = output.scrollHeight; };
+
+  try {
+    const res = await fetch('/api/batch-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ concept, tag, model, ollamaUrl, apiKey, resume, delayMs }),
+    });
+
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try { const err = await res.json(); errMsg = err.error || errMsg; } catch {}
+      statusEl.innerHTML = `<span class="error">✗ ${escapeHtml(errMsg)}</span>`;
+      return;
+    }
+
+    batchReader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await batchReader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (evt.type === 'started') {
+          total = evt.total;
+          bar.max = total || 1;
+          bar.value = 0;
+          statusEl.textContent = `0 / ${total} documents`;
+          append(`<div class="log-entry"><span class="log-tool memory">▶ Batch started — ${total} document${total !== 1 ? 's' : ''}</span></div>`);
+
+        } else if (evt.type === 'progress') {
+          bar.value = evt.current;
+          statusEl.textContent = `Processing ${evt.current} / ${evt.total}…`;
+          docTitle.textContent = evt.title;
+          append(`<div class="log-entry"><span class="log-tool default">▸ [${evt.current}/${evt.total}] ${escapeHtml(evt.title)}</span></div>`);
+
+        } else if (evt.type === 'skipped') {
+          bar.value = evt.current;
+          skipCount++;
+          cntSkip.textContent = `⟲ ${skipCount} skipped`;
+          append(`<div class="log-entry" style="opacity:0.45"><span style="color:#90caf9">⟲ skip</span> ${escapeHtml(evt.title)}</div>`);
+
+        } else if (evt.type === 'tool_call') {
+          const icon = toolIcons2[evt.name] || '⚙️';
+          const argsStr = escapeHtml(JSON.stringify(evt.args).slice(0, 120));
+          append(`<div class="log-entry"><span class="log-tool annotate">${icon} ${escapeHtml(evt.name)}</span> <span style="color:#546e7a">${argsStr}</span></div>`);
+
+        } else if (evt.type === 'tool_result') {
+          if (evt.name === 'annotate_document') annCount++, cntAnn.textContent = `✓ ${annCount} annotated`;
+          append(`<div class="log-entry" style="margin-top:-0.6rem; padding-top:0"><div class="log-summary">↳ ${escapeHtml(evt.result.slice(0, 300))}${evt.result.length > 300 ? '…' : ''}</div></div>`);
+
+        } else if (evt.type === 'error') {
+          errCount++;
+          cntErr.textContent = `✗ ${errCount} errors`;
+          append(`<div class="log-entry"><span class="error">✗ ${escapeHtml(evt.message)}</span></div>`);
+
+        } else if (evt.type === 'done') {
+          bar.value = evt.total;
+          statusEl.textContent = `Done — ${evt.annotated} annotated, ${evt.skipped} skipped, ${evt.errors} errors`;
+          append(`<div class="log-entry" style="border-top:1px solid #2d2d4e; padding-top:0.8rem; margin-top:0.4rem"><span class="log-tool memory">✓ Batch complete</span><div class="log-summary">annotated: ${evt.annotated} · skipped: ${evt.skipped} · errors: ${evt.errors} · total: ${evt.total}</div></div>`);
+          loadDocuments();
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      statusEl.innerHTML = `<span class="error">✗ ${escapeHtml(err.message)}</span>`;
+    }
+  } finally {
+    batchReader = null;
+    runBtn.disabled = false;
+    stopBtn.style.display = 'none';
   }
 }
 
@@ -861,6 +1099,20 @@ document.getElementById('deleteAllBtn').addEventListener('click', async () => {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadDocuments();
 pollSyncStatus();
+
+// Populate model datalist from Ollama (best-effort, falls back to hardcoded options)
+(async () => {
+  try {
+    const res = await fetch('http://localhost:11434/api/tags');
+    if (!res.ok) return;
+    const { models } = await res.json();
+    if (!Array.isArray(models) || !models.length) return;
+    const dl = document.getElementById('ollamaModels');
+    dl.innerHTML = models
+      .map(m => `<option value="${m.name}">`)
+      .join('');
+  } catch { /* Ollama not running — keep hardcoded fallbacks */ }
+})();
 </script>
 
 </body>
