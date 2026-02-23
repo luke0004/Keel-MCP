@@ -278,6 +278,7 @@
 <!-- Ask the AI -->
 <div class="card">
   <h2>Ask the AI</h2>
+  <p style="color:#666; font-size:0.9rem; margin:-0.4rem 0 1.1rem">Ask a free-form research question. The model searches and reads the corpus using any tools it needs, then returns an answer and writes targeted annotations — useful for exploratory, open-ended queries.</p>
 
   <label>System prompt</label>
   <textarea id="systemPrompt" rows="4" style="width:100%; padding:0.5rem 0.7rem; border:1px solid #dde1ea; border-radius:6px; font-size:0.85rem; font-family:inherit; resize:vertical; margin-bottom:0.9rem; background:#fafbff;">You are a musicology research assistant. Use the available tools to analyse the corpus. When you find a relevant passage, write an annotation with a concise tag. The corpus is in German. Write every annotation in German. Do not translate. Do not use English. IMPORTANT: Always use document IDs returned by search_corpus or read_corpus. Never invent or guess a document ID. If search_corpus returns no results, try a shorter or simpler keyword (1–2 words maximum). Do not use full sentences or phrases as search queries.</textarea>
@@ -308,6 +309,7 @@
 <!-- Batch Annotate -->
 <div class="card">
   <h2>Batch Annotate</h2>
+  <p style="color:#666; font-size:0.9rem; margin:-0.4rem 0 1.1rem">Apply one analytical concept to <em>every</em> document in the corpus in a single run. The model calls <code>analyze_document</code> and <code>annotate_document</code> on each document in sequence — useful for systematic, reproducible analysis across an entire collection.</p>
 
   <div class="batch-grid">
     <div>
@@ -364,7 +366,11 @@
 </div>
 
 <!-- Connect your LLM -->
-<div class="card">
+<details style="margin-bottom:1.5rem">
+<summary style="cursor:pointer; font-size:0.85rem; color:#888; user-select:none; list-style:none; display:flex; align-items:center; gap:0.4rem">
+  <span>▸</span> Developer options — MCP &amp; REST connection info
+</summary>
+<div class="card" style="margin-top:0.6rem; margin-bottom:0">
   <h2>Connect a Local LLM</h2>
   <p style="color:#555; font-size:0.92rem; margin-bottom:1rem">
     The MCP server is also reachable over SSE — connect any local model to the same corpus tools Claude uses.
@@ -414,6 +420,7 @@
 
   </div>
 </div>
+</details>
 
 <!-- Agent Activity -->
 <div class="activity-panel" id="activityPanel">
@@ -1094,6 +1101,11 @@ document.getElementById('deleteAllBtn').addEventListener('click', async () => {
   } catch (err) {
     alert('Delete failed: ' + err.message);
   }
+});
+
+// ── Developer options toggle arrow ────────────────────────────────────────────
+document.querySelector('details').addEventListener('toggle', function () {
+  this.querySelector('summary span').textContent = this.open ? '▾' : '▸';
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
