@@ -218,6 +218,56 @@
     .batch-counters .err { color: #c62828; }
     button.stop { background: #546e7a; }
     button.stop:hover { background: #37474f; }
+
+    /* ── Review Mode ── */
+    .review-item {
+      border: 1px solid #e8eaf6;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.8rem;
+      background: #fafbff;
+      transition: opacity 0.15s;
+    }
+    .review-item-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .review-doc-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .review-item-text {
+      font-size: 0.9rem;
+      line-height: 1.55;
+      color: #333;
+      margin-bottom: 0.8rem;
+      white-space: pre-wrap;
+    }
+    .review-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .btn-accept { background: #388e3c; }
+    .btn-accept:hover { background: #1b5e20; }
+    .btn-edit-open { background: #546e7a; }
+    .btn-edit-open:hover { background: #37474f; }
+    .edit-textarea {
+      width: 100%;
+      padding: 0.5rem 0.7rem;
+      border: 1px solid #dde1ea;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+      background: #fff;
+    }
   </style>
 </head>
 <body>
@@ -363,6 +413,20 @@
   </div>
 
   <div id="batchOutput" class="activity-panel" style="display:none; margin-top:1.2rem; margin-bottom:0"></div>
+</div>
+
+<!-- Review Annotations -->
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem">
+    <h2 style="margin:0">Review Annotations</h2>
+    <div style="display:flex; align-items:center; gap:0.8rem">
+      <input type="text" id="reviewTagFilter" placeholder="Filter by tag…" style="width:140px; font-size:0.85rem" oninput="filterReviewCards()">
+      <button class="btn-sm" onclick="loadReviewQueue()">↻ Refresh</button>
+    </div>
+  </div>
+  <p style="color:#666; font-size:0.9rem; margin:0.4rem 0 0.5rem">Review LLM annotations — accept, reject, or correct them. Corrections are saved as human annotations linked to the original, building your training dataset for fine-tuning.</p>
+  <div id="reviewCounter" style="font-size:0.82rem; color:#888; margin-bottom:1rem"></div>
+  <div id="reviewQueue"><span style="color:#aaa; font-size:0.9rem">Loading…</span></div>
 </div>
 
 <!-- Connect your LLM -->
@@ -1029,6 +1093,130 @@ async function batchRun() {
   }
 }
 
+// ── Review Mode ───────────────────────────────────────────────────────────────
+
+let reviewPendingCount = 0;
+
+async function loadReviewQueue() {
+  const tag    = document.getElementById('reviewTagFilter').value.trim();
+  const url    = '/api/annotations/review' + (tag ? '?tag=' + encodeURIComponent(tag) : '');
+  const queueEl = document.getElementById('reviewQueue');
+  queueEl.innerHTML = '<span style="color:#aaa; font-size:0.9rem">Loading…</span>';
+  try {
+    const data = await fetch(url).then(r => r.json());
+    renderReviewQueue(data.annotations || [], data.counts || []);
+  } catch (e) {
+    queueEl.innerHTML = '<span class="error">Failed to load review queue.</span>';
+  }
+}
+
+function renderReviewQueue(items, counts) {
+  const queueEl   = document.getElementById('reviewQueue');
+  const counterEl = document.getElementById('reviewCounter');
+
+  const pending  = (counts.find(c => c.review_status === 'pending')  || {}).n || 0;
+  const accepted = (counts.find(c => c.review_status === 'accepted') || {}).n || 0;
+  const rejected = (counts.find(c => c.review_status === 'rejected') || {}).n || 0;
+  reviewPendingCount = pending;
+
+  const total = pending + accepted + rejected;
+  counterEl.innerHTML = total > 0
+    ? `<span id="reviewPendingSpan" style="color:#5c6bc0; font-weight:600">${pending}</span> pending · <span style="color:#388e3c">${accepted}</span> accepted · <span style="color:#c62828">${rejected}</span> rejected`
+    : '<span id="reviewPendingSpan" style="color:#aaa">0</span> pending';
+
+  if (!items.length) {
+    queueEl.innerHTML = '<p style="color:#aaa; text-align:center; padding:1rem 0">No pending annotations. Run Batch Annotate to generate some, then return here to review them.</p>';
+    return;
+  }
+
+  queueEl.innerHTML = items.map(ann => `
+    <div class="review-item" id="rev-${ann.id}" data-tag="${escapeHtml(ann.tag || '')}">
+      <div class="review-item-header">
+        ${ann.tag ? `<span class="badge">${escapeHtml(ann.tag)}</span>` : ''}
+        <span class="review-doc-title" title="${escapeHtml(ann.document_title)}">${escapeHtml(ann.document_title)}</span>
+        <span class="ann-meta">${escapeHtml(ann.author_id || 'llm')} · ${new Date(ann.updated_at).toLocaleDateString()}</span>
+      </div>
+      <div class="review-item-text">${escapeHtml(ann.text)}</div>
+      <div class="review-actions" id="rev-actions-${ann.id}">
+        <button class="btn-sm btn-accept" onclick="acceptAnnotation('${ann.id}')">✓ Accept</button>
+        <button class="btn-sm btn-edit-open" onclick="startReviewEdit('${ann.id}')">✏ Edit</button>
+        <button class="btn-sm danger" onclick="rejectAnnotation('${ann.id}')">✗ Reject</button>
+      </div>
+      <div id="rev-edit-${ann.id}" style="display:none; margin-top:0.6rem">
+        <textarea class="edit-textarea" id="rev-text-${ann.id}">${escapeHtml(ann.text)}</textarea>
+        <input type="text" id="rev-tag-${ann.id}" value="${escapeHtml(ann.tag || '')}" placeholder="Tag" style="margin-top:0.4rem; font-size:0.85rem; width:100%">
+        <div style="display:flex; gap:0.5rem; margin-top:0.5rem">
+          <button class="btn-sm" onclick="saveReviewEdit('${ann.id}')">Save correction</button>
+          <button class="btn-sm" style="background:#b0bec5; color:#333" onclick="cancelReviewEdit('${ann.id}')">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterReviewCards() {
+  const filter = document.getElementById('reviewTagFilter').value.toLowerCase();
+  document.querySelectorAll('.review-item').forEach(el => {
+    el.style.display = (!filter || el.dataset.tag.toLowerCase().includes(filter)) ? '' : 'none';
+  });
+}
+
+async function acceptAnnotation(id) { await reviewAction(id, 'accept'); }
+async function rejectAnnotation(id) { await reviewAction(id, 'reject'); }
+
+function startReviewEdit(id) {
+  document.getElementById('rev-actions-' + id).style.display = 'none';
+  document.getElementById('rev-edit-' + id).style.display = 'block';
+  document.getElementById('rev-text-' + id).focus();
+}
+
+function cancelReviewEdit(id) {
+  document.getElementById('rev-edit-' + id).style.display = 'none';
+  document.getElementById('rev-actions-' + id).style.display = 'flex';
+}
+
+async function saveReviewEdit(id) {
+  const correction = document.getElementById('rev-text-' + id).value.trim();
+  const tag        = document.getElementById('rev-tag-' + id).value.trim();
+  if (!correction) { alert('Correction text cannot be empty.'); return; }
+  await reviewAction(id, 'edit', correction, tag);
+}
+
+async function reviewAction(id, action, correction, tag) {
+  try {
+    const body = { action };
+    if (correction !== undefined) body.correction = correction;
+    if (tag        !== undefined) body.tag        = tag;
+
+    const r = await fetch('/api/annotations/' + id + '/review', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+
+    // Fade card out and remove
+    const card = document.getElementById('rev-' + id);
+    if (card) {
+      card.style.opacity = '0';
+      setTimeout(() => {
+        card.remove();
+        reviewPendingCount = Math.max(0, reviewPendingCount - 1);
+        const span = document.getElementById('reviewPendingSpan');
+        if (span) span.textContent = reviewPendingCount;
+        if (document.querySelectorAll('.review-item').length === 0) {
+          document.getElementById('reviewQueue').innerHTML =
+            '<p style="color:#388e3c; text-align:center; padding:1rem 0">✓ All done — no pending annotations.</p>';
+        }
+      }, 160);
+    }
+
+    if (action === 'edit') loadDocuments(); // refresh doc annotation counts
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
 // ── Supabase sync ─────────────────────────────────────────────────────────────
 
 async function pollSyncStatus() {
@@ -1110,6 +1298,7 @@ document.querySelector('details').addEventListener('toggle', function () {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 loadDocuments();
+loadReviewQueue();
 pollSyncStatus();
 
 // Populate model datalist from Ollama (best-effort, falls back to hardcoded options)

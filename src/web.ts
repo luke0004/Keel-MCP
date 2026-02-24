@@ -243,6 +243,101 @@ app.delete('/api/annotations/:id', (req: any, res: any) => {
 });
 
 // ---------------------------------------------------------------------------
+// Annotation review queue — Phase 4e
+// ---------------------------------------------------------------------------
+
+// GET /api/annotations/review?tag=&status=pending
+// Returns LLM annotations pending review, joined with document title, plus
+// aggregate counts per review_status for the progress counter.
+app.get('/api/annotations/review', (req: any, res: any) => {
+  const { tag, status = 'pending' } = req.query;
+  try {
+    const db = getDB();
+    try {
+      let sql = `
+        SELECT ca.*, cd.title AS document_title
+        FROM corpus_annotations ca
+        JOIN corpus_documents cd ON ca.document_id = cd.id
+        WHERE ca.author_type = 'llm' AND ca.review_status = ?
+      `;
+      const params: unknown[] = [status];
+      if (tag) { sql += ' AND ca.tag = ?'; params.push(tag); }
+      sql += ' ORDER BY ca.updated_at ASC';
+      const annotations = db.prepare(sql).all(...params);
+
+      const counts = db.prepare(`
+        SELECT review_status, COUNT(*) AS n
+        FROM corpus_annotations
+        WHERE author_type = 'llm'
+        GROUP BY review_status
+      `).all();
+
+      res.json({ annotations, counts });
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// PATCH /api/annotations/:id/review  { action: 'accept'|'reject'|'edit', correction?, tag? }
+// accept  — marks review_status = 'accepted' (immutable content, mutable curation state)
+// reject  — marks review_status = 'rejected' (soft, never deletes the row)
+// edit    — creates a new human annotation (corrects_id → original), marks original accepted
+app.patch('/api/annotations/:id/review', (req: any, res: any) => {
+  const { action, correction, tag } = req.body ?? {};
+  if (!['accept', 'reject', 'edit'].includes(action)) {
+    return res.status(400).json({ error: 'action must be accept, reject, or edit' });
+  }
+  try {
+    const db = getDB();
+    try {
+      const ann = db.prepare('SELECT * FROM corpus_annotations WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
+      if (!ann) return res.status(404).json({ error: 'Annotation not found' });
+
+      if (action === 'accept') {
+        db.prepare('UPDATE corpus_annotations SET review_status = ? WHERE id = ?').run('accepted', req.params.id);
+        res.json({ status: 'accepted' });
+
+      } else if (action === 'reject') {
+        db.prepare('UPDATE corpus_annotations SET review_status = ? WHERE id = ?').run('rejected', req.params.id);
+        res.json({ status: 'rejected' });
+
+      } else {
+        // edit: require correction text, create human annotation, mark original accepted
+        if (!correction) return res.status(400).json({ error: 'correction is required for edit action' });
+        const newId  = randomUUID();
+        const now    = Date.now();
+        const finalTag = (tag as string | undefined) ?? (ann.tag as string | undefined) ?? null;
+
+        db.prepare(`
+          INSERT INTO corpus_annotations
+            (id, document_id, text, tag, author_type, author_id, corrects_id, review_status, is_dirty, last_synced_at, updated_at)
+          VALUES (?, ?, ?, ?, 'human', 'researcher', ?, 'accepted', 1, NULL, ?)
+        `).run(newId, ann.document_id, correction, finalTag, req.params.id, now);
+
+        // Propagate tag to document (additive only)
+        if (finalTag) {
+          const doc = db.prepare('SELECT tags FROM corpus_documents WHERE id = ?').get(ann.document_id) as { tags: string } | undefined;
+          if (doc) {
+            const tags: string[] = JSON.parse(doc.tags || '[]');
+            if (!tags.includes(finalTag)) {
+              tags.push(finalTag);
+              db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, ann.document_id);
+            }
+          }
+        }
+
+        db.prepare('UPDATE corpus_annotations SET review_status = ? WHERE id = ?').run('accepted', req.params.id);
+        pushAnnotationsBackground();
+        res.json({ status: 'edited', newId });
+      }
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // OpenAI-compatible tool API
 //
 // Exposes the same tool set as MCP but in the OpenAI function-calling format.
