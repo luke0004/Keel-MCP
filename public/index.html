@@ -1237,6 +1237,7 @@ async function batchRun() {
 // ── Review Mode ───────────────────────────────────────────────────────────────
 
 let reviewPendingCount = 0;
+const reviewAnnMap = {}; // annId → { document_id, text }
 
 async function loadReviewQueue() {
   const tag    = document.getElementById('reviewTagFilter').value.trim();
@@ -1254,6 +1255,9 @@ async function loadReviewQueue() {
 function renderReviewQueue(items, counts) {
   const queueEl   = document.getElementById('reviewQueue');
   const counterEl = document.getElementById('reviewCounter');
+
+  // Store for safe lookup by viewDocument (avoids HTML-encoding issues in onclick)
+  for (const ann of items) reviewAnnMap[ann.id] = { document_id: ann.document_id, text: ann.text };
 
   const pending  = (counts.find(c => c.review_status === 'pending')  || {}).n || 0;
   const accepted = (counts.find(c => c.review_status === 'accepted') || {}).n || 0;
@@ -1282,7 +1286,7 @@ function renderReviewQueue(items, counts) {
         <button class="btn-sm btn-accept" onclick="acceptAnnotation('${ann.id}')">✓ Accept</button>
         <button class="btn-sm btn-edit-open" onclick="startReviewEdit('${ann.id}')">✏ Edit</button>
         <button class="btn-sm danger" onclick="rejectAnnotation('${ann.id}')">✗ Reject</button>
-        <button class="btn-sm" style="background:#e8eaf6; color:#3f51b5" onclick="viewDocument('${ann.document_id}', ${JSON.stringify(ann.text)})">⊞ View</button>
+        <button class="btn-sm" style="background:#e8eaf6; color:#3f51b5" onclick="viewFromAnnotation('${ann.id}')">⊞ View</button>
       </div>
       <div id="rev-edit-${ann.id}" style="display:none; margin-top:0.6rem">
         <textarea class="edit-textarea" id="rev-text-${ann.id}">${escapeHtml(ann.text)}</textarea>
@@ -1439,6 +1443,11 @@ document.querySelector('details').addEventListener('toggle', function () {
 });
 
 // ── Document viewer ───────────────────────────────────────────────────────────
+
+function viewFromAnnotation(annId) {
+  const ann = reviewAnnMap[annId];
+  if (ann) viewDocument(ann.document_id, ann.text);
+}
 
 async function viewDocument(docId, annotationText) {
   const panel = document.getElementById('viewerContent');
