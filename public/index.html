@@ -336,10 +336,16 @@
   <label>Your question</label>
   <textarea id="userMessage" rows="2" placeholder="e.g. Search for 'erhaben' and annotate the three most significant passages." style="width:100%; padding:0.5rem 0.7rem; border:1px solid #dde1ea; border-radius:6px; font-size:0.9rem; font-family:inherit; resize:vertical; margin-bottom:0.9rem; background:#fafbff;"></textarea>
 
+  <div style="display:flex; gap:0.5rem; margin-bottom:0.6rem; flex-wrap:wrap">
+    <button onclick="setPreset('run','ollama')" style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Ollama (local)</button>
+    <button onclick="setPreset('run','claude')" style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Claude (Anthropic)</button>
+    <button onclick="setPreset('run','openai')" style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">OpenAI</button>
+  </div>
+
   <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap">
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">Model</label>
-      <input type="text" id="modelName" value="qwen2.5:7b" style="width:200px" list="ollamaModels">
+      <input type="text" id="modelName" value="qwen2.5:7b" style="width:220px" list="ollamaModels">
     </div>
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">Endpoint</label>
@@ -347,7 +353,7 @@
     </div>
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">API key</label>
-      <input type="password" id="runApiKey" placeholder="sk-… (leave blank for Ollama)" style="width:180px">
+      <input type="password" id="runApiKey" placeholder="sk-… (leave blank for Ollama)" style="width:200px">
     </div>
     <button id="runBtn" onclick="runQuery()">▶ Run</button>
     <span id="runStatus" style="font-size:0.85rem; color:#888"></span>
@@ -373,9 +379,9 @@
   </div>
 
   <div style="display:flex; gap:0.5rem; margin-top:1rem; flex-wrap:wrap">
-    <button onclick="setBatchPreset('ollama')"  style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Ollama (local)</button>
-    <button onclick="setBatchPreset('claude')"  style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Claude (Anthropic)</button>
-    <button onclick="setBatchPreset('openai')"  style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">OpenAI</button>
+    <button onclick="setPreset('batch','ollama')" style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Ollama (local)</button>
+    <button onclick="setPreset('batch','claude')" style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Claude (Anthropic)</button>
+    <button onclick="setPreset('batch','openai')" style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">OpenAI</button>
   </div>
 
   <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:0.6rem">
@@ -970,24 +976,28 @@ async function runQuery() {
   }
 }
 
-// ── Batch Annotate presets ─────────────────────────────────────────────────────
-function setBatchPreset(preset) {
-  const model    = document.getElementById('batchModel');
-  const endpoint = document.getElementById('batchEndpoint');
-  const apiKey   = document.getElementById('batchApiKey');
+// ── Model presets (shared by Ask the Corpus and Batch Annotate) ────────────────
+function setPreset(card, preset) {
+  const ids = card === 'run'
+    ? { model: 'modelName',  endpoint: 'runEndpoint',   apiKey: 'runApiKey'   }
+    : { model: 'batchModel', endpoint: 'batchEndpoint', apiKey: 'batchApiKey' };
+  const model    = document.getElementById(ids.model);
+  const endpoint = document.getElementById(ids.endpoint);
+  const apiKey   = document.getElementById(ids.apiKey);
   if (preset === 'ollama') {
-    model.value    = 'qwen2.5:7b';
-    endpoint.value = 'http://localhost:11434/v1/chat/completions';
-    apiKey.value   = '';
+    model.value        = 'qwen2.5:7b';
+    endpoint.value     = 'http://localhost:11434/v1/chat/completions';
+    apiKey.value       = '';
+    apiKey.placeholder = 'sk-… (leave blank for Ollama)';
   } else if (preset === 'claude') {
-    model.value    = 'claude-haiku-4-5-20251001';
-    endpoint.value = 'https://api.anthropic.com/v1/messages';
-    apiKey.value   = '';
+    model.value        = 'claude-haiku-4-5-20251001';
+    endpoint.value     = 'https://api.anthropic.com/v1/messages';
+    apiKey.value       = '';
     apiKey.placeholder = 'sk-ant-…';
   } else if (preset === 'openai') {
-    model.value    = 'gpt-4o-mini';
-    endpoint.value = 'https://api.openai.com/v1/chat/completions';
-    apiKey.value   = '';
+    model.value        = 'gpt-4o-mini';
+    endpoint.value     = 'https://api.openai.com/v1/chat/completions';
+    apiKey.value       = '';
     apiKey.placeholder = 'sk-…';
   }
 }
