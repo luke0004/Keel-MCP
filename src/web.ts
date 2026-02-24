@@ -540,6 +540,129 @@ app.post('/api/sync', async (_req, res: any) => {
 // ---------------------------------------------------------------------------
 // Agentic query runner — SSE stream
 //
+// ---------------------------------------------------------------------------
+// LLM adapter — supports OpenAI-compatible (Ollama, OpenAI, …) and Anthropic
+// ---------------------------------------------------------------------------
+
+interface LLMToolCall { id: string; name: string; arguments: Record<string, unknown> }
+interface LLMResult   { rawMessage: Record<string, unknown>; content: string | null; toolCalls: LLMToolCall[] }
+
+function isAnthropicEndpoint(endpoint: string, apiKey: string | null) {
+  return endpoint.includes('anthropic.com') || (apiKey ?? '').startsWith('sk-ant-');
+}
+
+function toAnthropicMessages(msgs: Record<string, unknown>[]) {
+  const out: Record<string, unknown>[] = [];
+  for (const m of msgs) {
+    if (m.role === 'system') continue;
+    if (m.role === 'tool') {
+      const block = { type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content };
+      const last = out[out.length - 1];
+      if (last?.role === 'user' && Array.isArray(last.content)) {
+        (last.content as unknown[]).push(block);
+      } else {
+        out.push({ role: 'user', content: [block] });
+      }
+    } else if (m.role === 'assistant' && Array.isArray((m as any).tool_calls)) {
+      const content: unknown[] = [];
+      if (m.content) content.push({ type: 'text', text: m.content });
+      for (const tc of (m as any).tool_calls) {
+        const args = typeof tc.function.arguments === 'string'
+          ? JSON.parse(tc.function.arguments) : tc.function.arguments;
+        content.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input: args });
+      }
+      out.push({ role: 'assistant', content });
+    } else {
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+function toAnthropicTools(tools: readonly any[]) {
+  return tools.map(t => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  }));
+}
+
+async function callLLM(
+  endpoint: string,
+  apiKey: string | null,
+  model: string,
+  messages: Record<string, unknown>[],
+  tools: readonly any[],
+): Promise<{ ok: false; error: string } | ({ ok: true } & LLMResult)> {
+
+  if (isAnthropicEndpoint(endpoint, apiKey)) {
+    const sysMsg  = messages.find(m => m.role === 'system');
+    const anthMsgs = toAnthropicMessages(messages);
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey ?? '',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        system: sysMsg?.content ?? '',
+        messages: anthMsgs,
+        tools: toAnthropicTools(tools),
+      }),
+    });
+    if (!res.ok) return { ok: false, error: `Anthropic error ${res.status}: ${await res.text()}` };
+    const data = await res.json() as {
+      content: { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
+    };
+    const textBlock = data.content.find(c => c.type === 'text');
+    const toolUses  = data.content.filter(c => c.type === 'tool_use');
+    // Store back in OpenAI-canonical format so the messages array stays uniform
+    const rawMessage: Record<string, unknown> = {
+      role: 'assistant',
+      content: textBlock?.text ?? null,
+      ...(toolUses.length ? {
+        tool_calls: toolUses.map(t => ({
+          id: t.id,
+          function: { name: t.name, arguments: JSON.stringify(t.input ?? {}) },
+        })),
+      } : {}),
+    };
+    return {
+      ok: true, rawMessage,
+      content: textBlock?.text ?? null,
+      toolCalls: toolUses.map(t => ({ id: t.id!, name: t.name!, arguments: t.input ?? {} })),
+    };
+  }
+
+  // OpenAI-compatible
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey ?? 'ollama'}` },
+    body: JSON.stringify({ model, tools, messages }),
+  });
+  if (!res.ok) return { ok: false, error: `LLM error ${res.status}: ${await res.text()}` };
+  const data = await res.json() as {
+    choices: { message: { content: string | null; tool_calls?: { id: string; function: { name: string; arguments: string | Record<string, unknown> } }[] } }[];
+  };
+  const msg = data.choices[0]?.message;
+  if (!msg) return { ok: false, error: 'Empty response from model' };
+  return {
+    ok: true,
+    rawMessage: msg as Record<string, unknown>,
+    content: msg.content,
+    toolCalls: (msg.tool_calls ?? []).map(tc => ({
+      id: tc.id,
+      name: tc.function.name,
+      arguments: typeof tc.function.arguments === 'string'
+        ? JSON.parse(tc.function.arguments)
+        : tc.function.arguments as Record<string, unknown>,
+    })),
+  };
+}
+
 // POST /api/run  { systemPrompt, userMessage, model, ollamaUrl }
 // Streams: { type: 'tool_call'|'tool_result'|'answer'|'error'|'done', ... }
 // ---------------------------------------------------------------------------
@@ -578,41 +701,23 @@ app.post('/api/run', async (req: any, res: any) => {
 
   try {
     for (let step = 0; step < 10; step++) {
-      const llmRes = await fetch(ollamaUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey ?? 'ollama'}` },
-        body: JSON.stringify({ model, tools: OPENAI_TOOLS, messages }),
-      });
+      const llm = await callLLM(ollamaUrl, apiKey ?? null, model, messages, OPENAI_TOOLS);
+      if (!llm.ok) { send({ type: 'error', message: llm.error }); break; }
 
-      if (!llmRes.ok) {
-        send({ type: 'error', message: `LLM error ${llmRes.status}: ${await llmRes.text()}` });
+      messages.push(llm.rawMessage);
+
+      if (!llm.toolCalls.length) {
+        send({ type: 'answer', text: llm.content });
         break;
       }
 
-      const data = await llmRes.json() as { choices: { message: { content: string; tool_calls?: { id: string; function: { name: string; arguments: string | Record<string, unknown> } }[] } }[] };
-      const msg = data.choices[0]?.message;
-      if (!msg) { send({ type: 'error', message: 'Empty response from model' }); break; }
-      messages.push(msg as Record<string, unknown>);
+      for (const call of llm.toolCalls) {
+        send({ type: 'tool_call', name: call.name, args: call.arguments });
 
-      if (!msg.tool_calls?.length) {
-        send({ type: 'answer', text: msg.content });
-        break;
-      }
-
-      for (const call of msg.tool_calls) {
-        let args: Record<string, unknown>;
-        try {
-          args = typeof call.function.arguments === 'string'
-            ? JSON.parse(call.function.arguments)
-            : (call.function.arguments as Record<string, unknown>);
-        } catch { args = {}; }
-
-        send({ type: 'tool_call', name: call.function.name, args });
-
-        const result = await handleToolCall(call.function.name, args);
+        const result = await handleToolCall(call.name, call.arguments);
         const text = result.content.map((c: { text?: string }) => c.text ?? '').join('\n');
 
-        send({ type: 'tool_result', name: call.function.name, result: text.slice(0, 600) });
+        send({ type: 'tool_result', name: call.name, result: text.slice(0, 600) });
 
         messages.push({ role: 'tool', tool_call_id: call.id, content: text });
       }
@@ -718,47 +823,26 @@ app.post('/api/batch-run', async (req: any, res: any) => {
       for (let step = 0; step < 6; step++) {
         if (stopped) break;
 
-        const llmRes = await fetch(ollamaUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey ?? 'ollama'}` },
-          body: JSON.stringify({ model, tools: OPENAI_TOOLS, messages }),
-        });
-
-        if (!llmRes.ok) {
-          send({ type: 'error', documentId: doc.id, message: `LLM error ${llmRes.status}: ${await llmRes.text()}` });
+        const llm = await callLLM(ollamaUrl, apiKey ?? null, model, messages, OPENAI_TOOLS);
+        if (!llm.ok) {
+          send({ type: 'error', documentId: doc.id, message: llm.error });
           errors++;
           break;
         }
 
-        const data = await llmRes.json() as {
-          choices: { message: { content: string; tool_calls?: { id: string; function: { name: string; arguments: string | Record<string, unknown> } }[] } }[];
-        };
-        const msg = data.choices[0]?.message;
-        if (!msg) {
-          send({ type: 'error', documentId: doc.id, message: 'Empty response from model' });
-          errors++;
-          break;
-        }
-        messages.push(msg as Record<string, unknown>);
+        messages.push(llm.rawMessage);
 
-        if (!msg.tool_calls?.length) break;
+        if (!llm.toolCalls.length) break;
 
-        for (const call of msg.tool_calls) {
-          let args: Record<string, unknown>;
-          try {
-            args = typeof call.function.arguments === 'string'
-              ? JSON.parse(call.function.arguments)
-              : (call.function.arguments as Record<string, unknown>);
-          } catch { args = {}; }
+        for (const call of llm.toolCalls) {
+          send({ type: 'tool_call', documentId: doc.id, name: call.name, args: call.arguments });
 
-          send({ type: 'tool_call', documentId: doc.id, name: call.function.name, args });
+          if (call.name === 'annotate_document') didAnnotate = true;
 
-          if (call.function.name === 'annotate_document') didAnnotate = true;
-
-          const result = await handleToolCall(call.function.name, args);
+          const result = await handleToolCall(call.name, call.arguments);
           const text = result.content.map((c: { text?: string }) => c.text ?? '').join('\n');
 
-          send({ type: 'tool_result', documentId: doc.id, name: call.function.name, result: text.slice(0, 600) });
+          send({ type: 'tool_result', documentId: doc.id, name: call.name, result: text.slice(0, 600) });
 
           messages.push({ role: 'tool', tool_call_id: call.id, content: text });
         }

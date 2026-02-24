@@ -1,0 +1,552 @@
+/**
+ * Keel MCP Server — exposes local SQLite corpus to AI agents via MCP (stdio).
+ */
+
+import { randomUUID } from "node:crypto";
+import { config } from "dotenv";
+import { z } from "zod";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { getDB, initSchema, initCorpusFTS, initActivityLog } from "./db/index.js";
+import { SyncCoordinator } from "./core/SyncCoordinator.js";
+import { SupabaseTransport } from "./core/SupabaseTransport.js";
+import { LogbookSchema, CorpusSchema } from "./schema.js";
+import { AgentMemorySchema } from "./schemas/AgentMemory.js";
+import { logActivityToDB } from "./activity.js";
+
+// Initialize DB and Create Tables
+const db = getDB();
+initSchema(db, LogbookSchema);
+initSchema(db, AgentMemorySchema);
+initSchema(db, CorpusSchema);
+initCorpusFTS(db);
+initActivityLog(db);
+db.close();
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract up to maxPassages excerpts (contextChars chars either side) around
+ * every occurrence of `term` in `content`.
+ */
+function getPassages(
+  content: string,
+  term: string,
+  maxPassages = 5,
+  contextChars = 200,
+): string[] {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(escaped, "gi");
+  const passages: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null && passages.length < maxPassages) {
+    const start = Math.max(0, match.index - contextChars);
+    const end = Math.min(content.length, match.index + match[0].length + contextChars);
+    const prefix = start > 0 ? "…" : "";
+    const suffix = end < content.length ? "…" : "";
+    passages.push(prefix + content.slice(start, end) + suffix);
+  }
+  return passages;
+}
+
+// ---------------------------------------------------------------------------
+// MCP Server
+// ---------------------------------------------------------------------------
+
+const server = new Server(
+  { name: "keel-logbook", version: "1.0.0" },
+  { capabilities: { tools: {} } },
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    // ── Logbook tools ──────────────────────────────────────────────────────
+    {
+      name: "read_recent_logs",
+      description: "Read recent logbook entries from the local database.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          limit: { type: "number", description: "Max number of entries to return." },
+        },
+      },
+    },
+    {
+      name: "search_logs",
+      description: "Search logbook entries by title or body.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "Search term." },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "log_entry",
+      description: "Insert a new log entry and trigger a background sync.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          title: { type: "string" },
+          body: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+          wind_speed: { type: "number" },
+        },
+        required: ["title", "body", "tags", "wind_speed"],
+      },
+    },
+    {
+      name: "sync_now",
+      description: "Manually trigger a full sync (push dirty entries, then pull).",
+      inputSchema: { type: "object" as const, properties: {} },
+    },
+
+    // ── Agent memory tools ─────────────────────────────────────────────────
+    {
+      name: "remember_fact",
+      description: "Store a fact in agent memory.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          key: { type: "string" },
+          value: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+        },
+        required: ["key", "value"],
+      },
+    },
+    {
+      name: "recall_fact",
+      description: "Recall a fact from agent memory by key.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          key: { type: "string" },
+        },
+        required: ["key"],
+      },
+    },
+
+    // ── Corpus tools ───────────────────────────────────────────────────────
+    {
+      name: "read_corpus",
+      description:
+        "List all documents in the corpus (metadata only — no full content). " +
+        "Use get_document to fetch the full text of a specific document.",
+      inputSchema: { type: "object" as const, properties: {} },
+    },
+    {
+      name: "get_document",
+      description: "Fetch the full content and annotations of a single corpus document by ID.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          id: { type: "string", description: "Document ID." },
+        },
+        required: ["id"],
+      },
+    },
+    {
+      name: "search_corpus",
+      description:
+        "Full-text search across the corpus using SQLite FTS5. Returns ranked results with " +
+        "contextual snippets. Supports phrases (\"nature metaphor\"), boolean operators " +
+        "(Kant AND sublime), and prefix wildcards (philos*).",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          query: { type: "string", description: "FTS5 search query." },
+          limit: { type: "number", description: "Max results (default 10)." },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "analyze_document",
+      description:
+        "Analyze a corpus document for specific terms or phrases. Returns occurrence counts " +
+        "and surrounding passage excerpts for each term — ideal for identifying philosophical " +
+        "concepts, metaphors, or rhetorical patterns in historical texts.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          documentId: { type: "string" },
+          terms: {
+            type: "array",
+            items: { type: "string" },
+            description: "List of terms or phrases to search for.",
+          },
+        },
+        required: ["documentId", "terms"],
+      },
+    },
+    {
+      name: "annotate_document",
+      description:
+        "Add an analytical annotation to a corpus document. " +
+        "Annotations are stored in the document metadata and visible in the web interface.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          documentId: { type: "string" },
+          annotation: { type: "string" },
+          tag: { type: "string", description: "Optional classification tag (e.g. 'nature-metaphor')" },
+        },
+        required: ["documentId", "annotation"],
+      },
+    },
+  ],
+}));
+
+// ---------------------------------------------------------------------------
+// Tool handlers
+// ---------------------------------------------------------------------------
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+  const params = (args ?? {}) as Record<string, unknown>;
+  return handleToolCall(name, params);
+});
+
+async function handleToolCall(name: string, params: Record<string, unknown>) {
+  // ── read_recent_logs ──────────────────────────────────────────────────────
+  if (name === "read_recent_logs") {
+    const limit = Number(params?.limit ?? 20);
+    const sql = `SELECT * FROM logbook_entries ORDER BY updated_at DESC LIMIT ${limit}`;
+    const db = getDB();
+    try {
+      const rows = db.prepare(sql).all() as Record<string, unknown>[];
+      logActivityToDB({ tool: name, params, sqlPreview: sql, resultSummary: `Returned ${rows.length} log entries` });
+      return { content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── search_logs ───────────────────────────────────────────────────────────
+  if (name === "search_logs") {
+    const query = String(params?.query ?? "");
+    const sql = `SELECT * FROM logbook_entries WHERE title LIKE '%${query}%' OR body LIKE '%${query}%'`;
+    const db = getDB();
+    try {
+      const pattern = `%${query}%`;
+      const rows = db
+        .prepare("SELECT * FROM logbook_entries WHERE title LIKE ? OR body LIKE ?")
+        .all(pattern, pattern) as Record<string, unknown>[];
+      logActivityToDB({ tool: name, params, sqlPreview: sql, resultSummary: `Found ${rows.length} log entries matching "${query}"` });
+      return { content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── log_entry ─────────────────────────────────────────────────────────────
+  if (name === "log_entry") {
+    const parsed = z.object({
+      title: z.string(),
+      body: z.string(),
+      tags: z.array(z.string()),
+      wind_speed: z.number(),
+    }).parse(params);
+
+    const db = getDB();
+    const id = randomUUID();
+    const now = Date.now();
+    try {
+      db.prepare(
+        `INSERT INTO logbook_entries (id, title, body, tags, crew, field_timestamps, wind_speed, is_dirty, last_synced_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)`
+      ).run(id, parsed.title, parsed.body, JSON.stringify(parsed.tags), JSON.stringify([]), null, parsed.wind_speed, now);
+    } finally {
+      db.close();
+    }
+
+    config();
+    const db2 = getDB();
+    try {
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+        const transport = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, LogbookSchema.tableName, LogbookSchema.jsonFields);
+        const coordinator = new SyncCoordinator(db2, transport, LogbookSchema);
+        coordinator.push().catch(() => {});
+      }
+    } finally {
+      db2.close();
+    }
+
+    logActivityToDB({ tool: name, params, resultSummary: `Logged entry "${parsed.title}" (id: ${id})` });
+    return { content: [{ type: "text" as const, text: "Log saved and syncing..." }] };
+  }
+
+  // ── sync_now ──────────────────────────────────────────────────────────────
+  if (name === "sync_now") {
+    config();
+    const db = getDB();
+    try {
+      if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) throw new Error("Missing SUPABASE_URL or SUPABASE_KEY");
+      const transport = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, LogbookSchema.tableName, LogbookSchema.jsonFields);
+      const coordinator = new SyncCoordinator(db, transport, LogbookSchema);
+      await coordinator.sync();
+    } finally {
+      db.close();
+    }
+    logActivityToDB({ tool: name, params, resultSummary: "Full push+pull sync completed" });
+    return { content: [{ type: "text" as const, text: "Sync complete." }] };
+  }
+
+  // ── remember_fact ─────────────────────────────────────────────────────────
+  if (name === "remember_fact") {
+    const parsed = z.object({
+      key: z.string(),
+      value: z.string(),
+      tags: z.array(z.string()).optional().default([]),
+    }).parse(params);
+
+    const db = getDB();
+    const id = randomUUID();
+    const now = Date.now();
+    try {
+      db.prepare(
+        `INSERT INTO agent_memory (id, key, value, agent_id, context_tags, confidence, field_timestamps, is_dirty, last_synced_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)`
+      ).run(id, parsed.key, parsed.value, "keel-mcp", JSON.stringify(parsed.tags), 1.0, null, now);
+    } finally {
+      db.close();
+    }
+
+    config();
+    const db2 = getDB();
+    try {
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+        const transport = new SupabaseTransport(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, AgentMemorySchema.tableName, AgentMemorySchema.jsonFields);
+        const coordinator = new SyncCoordinator(db2, transport, AgentMemorySchema);
+        coordinator.push().catch(() => {});
+      }
+    } finally {
+      db2.close();
+    }
+
+    logActivityToDB({ tool: name, params, resultSummary: `Remembered fact: ${parsed.key} = "${parsed.value}"` });
+    return { content: [{ type: "text" as const, text: `Fact '${parsed.key}' remembered.` }] };
+  }
+
+  // ── recall_fact ───────────────────────────────────────────────────────────
+  if (name === "recall_fact") {
+    const { key } = z.object({ key: z.string() }).parse(params);
+    const db = getDB();
+    try {
+      const rows = db.prepare("SELECT * FROM agent_memory WHERE key = ?").all(key) as Record<string, unknown>[];
+      logActivityToDB({ tool: name, params, sqlPreview: `SELECT * FROM agent_memory WHERE key = '${key}'`, resultSummary: rows.length ? `Found fact: "${String(rows[0]?.value ?? "")}"` : "Fact not found" });
+      if (rows.length === 0) return { content: [{ type: "text" as const, text: "Fact not found." }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── read_corpus ───────────────────────────────────────────────────────────
+  if (name === "read_corpus") {
+    const sql = `SELECT id, title, author, publication_date, tags, metadata, updated_at FROM corpus_documents ORDER BY updated_at DESC`;
+    const db = getDB();
+    try {
+      const rows = db.prepare(sql).all() as Record<string, unknown>[];
+      // Add annotation count to each row for quick overview
+      const enriched = rows.map(row => {
+        try {
+          const meta = JSON.parse(row.metadata as string ?? "{}");
+          return { ...row, annotation_count: (meta.annotations ?? []).length, metadata: undefined };
+        } catch {
+          return { ...row, annotation_count: 0, metadata: undefined };
+        }
+      });
+      logActivityToDB({ tool: name, params, sqlPreview: sql, resultSummary: `Listed ${rows.length} corpus documents (metadata only)` });
+      return { content: [{ type: "text" as const, text: JSON.stringify(enriched, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── get_document ──────────────────────────────────────────────────────────
+  if (name === "get_document") {
+    const { id } = z.object({ id: z.string() }).parse(params);
+    const sql = `SELECT * FROM corpus_documents WHERE id = '${id}'`;
+    const db = getDB();
+    try {
+      const row = db.prepare("SELECT * FROM corpus_documents WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+      if (!row) {
+        logActivityToDB({ tool: name, params, sqlPreview: sql, resultSummary: `Document not found: ${id}` });
+        return { content: [{ type: "text" as const, text: "Document not found." }] };
+      }
+      const wordCount = String(row.content ?? "").split(/\s+/).filter(Boolean).length;
+      const meta = JSON.parse(row.metadata as string ?? "{}");
+      logActivityToDB({ tool: name, params, sqlPreview: sql, resultSummary: `Fetched "${row.title}" (${wordCount} words, ${(meta.annotations ?? []).length} annotations)` });
+      return { content: [{ type: "text" as const, text: JSON.stringify({ ...row, word_count: wordCount }, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── search_corpus ─────────────────────────────────────────────────────────
+  if (name === "search_corpus") {
+    const { query, limit: rawLimit } = z.object({
+      query: z.string(),
+      limit: z.number().optional().default(10),
+    }).parse(params);
+    const limit = rawLimit ?? 10;
+
+    const ftsSql =
+      `SELECT cd.id, cd.title, cd.author, cd.publication_date, cd.tags,\n` +
+      `  snippet(corpus_fts, 2, '**', '**', '…', 32) AS snippet\n` +
+      `FROM corpus_fts\nJOIN corpus_documents cd ON corpus_fts.rowid = cd.rowid\n` +
+      `WHERE corpus_fts MATCH '${query}'\nORDER BY rank LIMIT ${limit}`;
+
+    const db = getDB();
+    try {
+      let rows: Record<string, unknown>[];
+      let usedFts = true;
+      try {
+        rows = db.prepare(
+          `SELECT cd.id, cd.title, cd.author, cd.publication_date, cd.tags,
+             snippet(corpus_fts, 2, '**', '**', '…', 32) AS snippet
+           FROM corpus_fts
+           JOIN corpus_documents cd ON corpus_fts.rowid = cd.rowid
+           WHERE corpus_fts MATCH ?
+           ORDER BY rank
+           LIMIT ?`
+        ).all(query, limit) as Record<string, unknown>[];
+      } catch {
+        usedFts = false;
+        const pattern = `%${query}%`;
+        rows = db.prepare(
+          `SELECT id, title, author, publication_date, tags,
+             substr(content, 1, 300) AS snippet
+           FROM corpus_documents
+           WHERE title LIKE ? OR content LIKE ? OR author LIKE ?
+           LIMIT ?`
+        ).all(pattern, pattern, pattern, limit) as Record<string, unknown>[];
+      }
+      logActivityToDB({
+        tool: name,
+        params,
+        sqlPreview: usedFts ? ftsSql : `LIKE fallback for: ${query}`,
+        resultSummary: `Found ${rows.length} result(s) for "${query}" via ${usedFts ? "FTS5" : "LIKE fallback"}`,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(rows, null, 2) }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── analyze_document ──────────────────────────────────────────────────────
+  if (name === "analyze_document") {
+    const { documentId, terms } = z.object({
+      documentId: z.string(),
+      terms: z.array(z.string()).min(1),
+    }).parse(params);
+
+    const db = getDB();
+    try {
+      const row = db.prepare(
+        "SELECT id, title, author, publication_date, content FROM corpus_documents WHERE id = ?"
+      ).get(documentId) as { id: string; title: string; author: string; publication_date: string; content: string } | undefined;
+
+      if (!row) throw new Error(`Document not found: ${documentId}`);
+
+      const content = row.content ?? "";
+      const wordCount = content.split(/\s+/).filter(Boolean).length;
+
+      const analysis = terms.map(term => {
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const matches = content.match(new RegExp(escaped, "gi")) ?? [];
+        return {
+          term,
+          occurrences: matches.length,
+          passages: getPassages(content, term),
+        };
+      });
+
+      const termSummary = analysis.map(a => `${a.term}: ${a.occurrences}`).join(" | ");
+      logActivityToDB({
+        tool: name,
+        params: { documentId, terms },
+        sqlPreview: `SELECT content FROM corpus_documents WHERE id = '${documentId}'`,
+        resultSummary: `Analyzed "${row.title}" for ${terms.length} term(s) — ${termSummary}`,
+      });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            document: {
+              id: row.id,
+              title: row.title,
+              author: row.author,
+              publication_date: row.publication_date,
+              word_count: wordCount,
+            },
+            analysis,
+          }, null, 2),
+        }],
+      };
+    } finally {
+      db.close();
+    }
+  }
+
+  // ── annotate_document ─────────────────────────────────────────────────────
+  if (name === "annotate_document") {
+    const { documentId, annotation, tag } = z.object({
+      documentId: z.string(),
+      annotation: z.string(),
+      tag: z.string().optional(),
+    }).parse(params);
+
+    const db = getDB();
+    try {
+      const doc = db.prepare("SELECT tags, metadata FROM corpus_documents WHERE id = ?").get(documentId) as
+        | { tags: string; metadata: string }
+        | undefined;
+
+      if (!doc) throw new Error(`Document not found: ${documentId}`);
+
+      const tags: string[] = JSON.parse(doc.tags || "[]");
+      const metadata = JSON.parse(doc.metadata || "{}");
+
+      if (!metadata.annotations) metadata.annotations = [];
+      metadata.annotations.push({ text: annotation, tag, timestamp: Date.now() });
+
+      if (tag && !tags.includes(tag)) tags.push(tag);
+
+      const sql = `UPDATE corpus_documents SET metadata = ?, tags = ?, updated_at = ? WHERE id = '${documentId}'`;
+      db.prepare(
+        "UPDATE corpus_documents SET metadata = ?, tags = ?, updated_at = ? WHERE id = ?"
+      ).run(JSON.stringify(metadata), JSON.stringify(tags), Date.now(), documentId);
+
+      logActivityToDB({
+        tool: name,
+        params: { documentId, annotation: annotation.slice(0, 80) + (annotation.length > 80 ? "…" : ""), tag },
+        sqlPreview: sql,
+        resultSummary: `Annotation added to doc ${documentId}${tag ? ` [tag: ${tag}]` : ""} — ${metadata.annotations.length} total annotation(s)`,
+      });
+
+      return { content: [{ type: "text" as const, text: "Annotation added successfully." }] };
+    } finally {
+      db.close();
+    }
+  }
+
+  throw new Error(`Unknown tool: ${name}`);
+}
+
+// ---------------------------------------------------------------------------
+// Start MCP server
+// ---------------------------------------------------------------------------
+
+const transport = new StdioServerTransport();
+await server.connect(transport);

@@ -372,10 +372,16 @@
     </div>
   </div>
 
-  <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem">
+  <div style="display:flex; gap:0.5rem; margin-top:1rem; flex-wrap:wrap">
+    <button onclick="setBatchPreset('ollama')"  style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Ollama (local)</button>
+    <button onclick="setBatchPreset('claude')"  style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">Claude (Anthropic)</button>
+    <button onclick="setBatchPreset('openai')"  style="font-size:0.8rem; padding:0.2rem 0.7rem; background:#f0f0f0; border:1px solid #ccc; border-radius:4px; cursor:pointer">OpenAI</button>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:0.6rem">
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">Model</label>
-      <input type="text" id="batchModel" value="qwen2.5:7b" style="width:200px" list="ollamaModels">
+      <input type="text" id="batchModel" value="qwen2.5:7b" style="width:220px" list="ollamaModels">
     </div>
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">Endpoint</label>
@@ -383,7 +389,7 @@
     </div>
     <div style="display:flex; align-items:center; gap:0.5rem">
       <label style="margin:0; white-space:nowrap">API key</label>
-      <input type="password" id="batchApiKey" placeholder="sk-… (leave blank for Ollama)" style="width:180px">
+      <input type="password" id="batchApiKey" placeholder="sk-… (leave blank for Ollama)" style="width:200px">
     </div>
     <div style="display:flex; align-items:center; gap:0.5rem">
       <input type="checkbox" id="batchResume" checked style="width:auto">
@@ -961,6 +967,28 @@ async function runQuery() {
   } finally {
     btn.disabled = false;
     btn.textContent = '▶ Run';
+  }
+}
+
+// ── Batch Annotate presets ─────────────────────────────────────────────────────
+function setBatchPreset(preset) {
+  const model    = document.getElementById('batchModel');
+  const endpoint = document.getElementById('batchEndpoint');
+  const apiKey   = document.getElementById('batchApiKey');
+  if (preset === 'ollama') {
+    model.value    = 'qwen2.5:7b';
+    endpoint.value = 'http://localhost:11434/v1/chat/completions';
+    apiKey.value   = '';
+  } else if (preset === 'claude') {
+    model.value    = 'claude-haiku-4-5-20251001';
+    endpoint.value = 'https://api.anthropic.com/v1/messages';
+    apiKey.value   = '';
+    apiKey.placeholder = 'sk-ant-…';
+  } else if (preset === 'openai') {
+    model.value    = 'gpt-4o-mini';
+    endpoint.value = 'https://api.openai.com/v1/chat/completions';
+    apiKey.value   = '';
+    apiKey.placeholder = 'sk-…';
   }
 }
 
