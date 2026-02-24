@@ -194,6 +194,44 @@ The interface is a full-viewport three-column workspace:
 
 Each column scrolls independently. The viewer highlights the annotated passage in yellow when the annotation text matches verbatim in the source.
 
+### Ask the AI
+
+Type a free-form research question in the **Ask the AI** card and click **▶ Run**. The model searches and reads the corpus using its tools and writes targeted annotations where relevant. Configure the endpoint, API key, and model using the preset buttons or set them manually:
+
+| Preset | Default model |
+|---|---|
+| **Ollama (local)** | `qwen2.5:7b` — no cloud, no cost |
+| **Claude** | `claude-haiku-4-5-20251001` — paste your `sk-ant-…` key |
+| **OpenAI** | `gpt-4o-mini` — paste your `sk-…` key |
+
+### Batch Annotate
+
+Enter a **Concept** (what to look for) and a **Tag** (applied to every annotation) in the **Batch Annotate** card. The model processes every document in sequence, streaming live progress via SSE. Use **Skip docs already annotated with this tag** to safely resume an interrupted run. The **Delay** slider throttles requests for cloud APIs with rate limits.
+
+### Review Mode
+
+The middle column shows all pending LLM annotations. For each annotation:
+
+| Action | Result |
+|---|---|
+| **✓ Accept** | Marks accepted — stays in the dataset |
+| **✏ Edit** | Opens a text field — save a corrected version as a human annotation linked to the original |
+| **✗ Reject** | Marks rejected — excluded from analysis |
+| **⊞ View** | Loads the full source document in the right column |
+
+Filter the queue by tag using the filter box at the top. Decisions are stored in `review_status` and are never overwritten by subsequent sync or re-annotation runs.
+
+### Search syntax
+
+The **Search Corpus** box supports SQLite FTS5 queries:
+
+| Query | Finds |
+|---|---|
+| `sublime` | any document containing the word |
+| `"nature metaphor"` | the exact phrase |
+| `Kant AND beauty` | both words in the same document |
+| `philos*` | prefix wildcard (philosophy, philosophical, …) |
+
 ---
 
 ## Architecture
@@ -239,5 +277,10 @@ src/
     index.ts         SQLite init, FTS5, activity table
 public/
   index.html         single-page corpus manager UI
-HOW-TO.md           researcher guide (no coding required)
 ```
+
+---
+
+## Privacy
+
+All data stays on your machine. No text, annotation, or search query is sent to an external server unless you explicitly configure a cloud model (Claude, OpenAI) instead of Ollama.

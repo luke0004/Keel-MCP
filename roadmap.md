@@ -57,18 +57,26 @@ Activate the existing sync infrastructure (SyncCoordinator + SupabaseTransport) 
 - UI sync status badge (dirty count, last synced timestamp) ✅
 - Auto-migration of missing columns on startup ✅
 
+### ✅ 3c · Annotation Review Mode, workspace, and model support
+
+- Three-column workspace (tools · review queue · source document viewer); each column scrolls independently ✅
+- Annotation Review Mode: **✓ Accept** / **✗ Reject** / **✏ Edit** on each LLM annotation; filter queue by tag; **⊞ View** loads full source document in the right column; annotated passage highlighted in yellow ✅
+- `review_status` field — review decisions are never overwritten by sync or re-annotation ✅
+- Anthropic Claude API support — auto-detected by `sk-ant-` key prefix or Anthropic endpoint URL ✅
+- Model presets in web UI — Ollama / Claude / OpenAI one-click config; available Ollama models fetched on page load ✅
+
 ---
 
-## 🔜 Phase 3c — Production robustness
+## 🔜 Phase 3d — Production robustness
 
-### 3c · Retry queue with exponential backoff
+### 3d · Retry queue with exponential backoff
 Push failures are currently swallowed silently (`.catch(() => {})`). Dirty rows stay marked and will be retried on the next write, but there is no guarantee of when that happens and no visibility when connectivity is lost for an extended period.
 
 - On push failure: schedule retry after 2 s → 4 s → 8 s → 16 s → give up after N attempts
 - Surface persistent failures as a visible error badge in the UI
 - Particularly important for the satellite/offline use case the engine is designed for
 
-### 3d · Persistent audit log
+### 3e · Persistent audit log
 The live activity log is capped at 100 rows for dashboard performance. For research workflows where reproducibility is a requirement, a full record of every tool call — what the model queried, what it annotated, and when — is necessary.
 
 - Separate `agent_audit_log` table, append-only, no row limit
@@ -162,7 +170,9 @@ Filter search results and annotations by date range. Track how a concept (e.g. *
 ### 4d · Named entity extraction
 Add a dedicated MCP tool `extract_entities` that instructs the model to identify composers, critics, venues, and works as structured fields — stored as tags or in a dedicated entity table for later graph analysis.
 
-### 4e · Annotation Review Mode
+### 4e · Annotation Review Mode (advanced)
+
+> **Basic version shipped in Phase 3c:** accept / reject / edit per annotation, filter by tag, view source document, `review_status` field. The items below extend this foundation.
 
 A dedicated review UI where a researcher can rapidly triage agent annotations across the entire corpus — accepting, rejecting, or editing each one — without leaving the browser. Designed for the "batch annotate then curate" workflow: the model runs first, the human refines.
 
