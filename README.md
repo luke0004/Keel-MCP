@@ -29,13 +29,18 @@ Both interfaces share the same tool set. Switch models without changing anything
 | OpenAI-compatible REST API (`GET /api/tools`, `POST /api/tools/call`) | ✅ |
 | MCP over SSE (Open WebUI, Continue.dev, AnythingLLM) | ✅ |
 | MCP over stdio (Claude Desktop) | ✅ |
-| In-browser agentic query runner (no Python needed) | ✅ |
+| In-browser agentic query runner — Ask the AI card (no Python needed) | ✅ |
+| Batch Annotate — apply one concept to every document in a single run | ✅ |
+| Annotation Review Mode — accept / reject / correct LLM annotations | ✅ |
+| Three-column workspace — tools · review queue · source document viewer | ✅ |
+| Anthropic Claude API support — auto-detected by endpoint URL or `sk-ant-` key prefix | ✅ |
+| Model presets in UI — Ollama / Claude / OpenAI one-click config | ✅ |
 | CRDT annotation model (LLM + human, append-only, never overwrites) | ✅ |
+| `review_status` field — pending / accepted / rejected, safe from sync overwrites | ✅ |
 | Live agent activity log (cross-process, SQLite WAL) | ✅ |
 | Agent memory (`remember_fact`, `recall_fact`) | ✅ |
 | Supabase sync — push/pull for corpus + annotations, dirty-count badge, ↑↓ Sync button | ✅ |
 | Auto-migration of missing SQLite columns on startup | ✅ |
-| Batch annotation across corpus | 🔜 |
 | Retry queue with exponential backoff for failed pushes | 🔜 |
 | Persistent audit log (beyond 100-row live view) | 🔜 |
 
@@ -100,12 +105,20 @@ for _ in range(10):
 {
   "mcpServers": {
     "keel-mcp": {
-      "command": "node",
-      "args": ["--import", "tsx", "/absolute/path/to/Keel-MCP/src/server.ts"]
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/absolute/path/to/Keel-MCP/node_modules/.bin/tsx",
+        "/absolute/path/to/Keel-MCP/src/server.ts"
+      ],
+      "env": {
+        "DATABASE_PATH": "/absolute/path/to/Keel-MCP/keel.db"
+      }
     }
   }
 }
 ```
+
+> **Why `DATABASE_PATH`?** Claude Desktop spawns the server with a different working directory, so the server cannot find `keel.db` by relative path. The env var overrides this.
 
 **Open WebUI / AnythingLLM / Continue.dev** — SSE transport:
 ```
@@ -169,18 +182,35 @@ Every document upload and every annotation write triggers a background push auto
 
 ---
 
+## Web UI layout
+
+The interface is a full-viewport three-column workspace:
+
+| Column | Contents |
+|---|---|
+| **Left — Tools** | Upload corpus, Search, Ask the AI, Batch Annotate, Developer options, Agent Activity, Corpus Library |
+| **Middle — Review** | Annotation review queue — accept / reject / correct LLM annotations |
+| **Right — Viewer** | Full source document text, loaded on demand when clicking **⊞ View** on any annotation |
+
+Each column scrolls independently. The viewer highlights the annotated passage in yellow when the annotation text matches verbatim in the source.
+
+---
+
 ## Architecture
 
 ```
 Browser (http://localhost:3000)
     │
-    ├── POST /api/run          → agentic loop (SSE stream)
+    ├── POST /api/run          → Ask the AI — agentic loop (SSE stream)
+    ├── POST /api/batch-run    → Batch Annotate — per-doc agentic loop (SSE stream)
+    ├── GET  /api/annotations/review        → review queue
+    ├── PATCH /api/annotations/:id/review   → accept / reject / edit
     ├── GET  /api/tools        → OpenAI tool schema
     ├── POST /api/tools/call   → tool execution
     ├── GET  /mcp/sse          → MCP over SSE
     └── POST /api/upload       → corpus ingestion
             │
-    Express (web.ts)
+    Express (web.ts)  — unified callLLM() adapter (OpenAI-compatible + Anthropic)
             │
     handleToolCall (mcp-server.ts)   ←── MCP stdio (server.ts)
             │

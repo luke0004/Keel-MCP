@@ -1,4 +1,4 @@
-# Keel-MCP — How to Use (Preliminary Version)
+# Keel-MCP — How to Use
 
 Keel-MCP is a local research tool that lets an AI language model read, search, and annotate a corpus of historical texts — entirely on your own computer, without sending your data to any cloud service.
 
@@ -9,8 +9,9 @@ Keel-MCP is a local research tool that lets an AI language model read, search, a
 | Requirement | Why |
 |---|---|
 | [Node.js 20+](https://nodejs.org) | Runs the server |
-| [Ollama](https://ollama.com) | Runs the AI model locally |
 | A folder of `.md` or `.txt` files | Your corpus |
+| [Ollama](https://ollama.com) *(optional)* | Run an AI model locally, no cloud account needed |
+| Anthropic API key *(optional)* | Use Claude from the web UI instead of Ollama |
 
 ---
 
@@ -75,80 +76,55 @@ Drag your folder of files onto the **drop zone** in the browser. All `.md` and `
 
 ---
 
-## 5 · Run an analysis with the AI
+## 5 · Analyse the corpus with the AI
 
-Use the Python snippet below in a Jupyter notebook or script. It gives the model access to your corpus via the local tool API.
+The web UI has two modes. No Python or terminal commands needed.
 
-```python
-from openai import OpenAI
-import requests, json
+### Ask the AI — exploratory queries
 
-client = OpenAI(
-    base_url="http://localhost:11434/v1",
-    api_key="ollama",
-)
+Open the **Ask the AI** card (left column). Type a free-form research question and click **▶ Run**. The model will search and read the corpus using its tools and write targeted annotations where relevant.
 
-tools  = requests.get("http://localhost:3000/api/tools").json()["tools"]
+**Choose your model** using the preset buttons above the fields:
 
-messages = [
-    {
-        "role": "system",
-        "content": (
-            "You are a musicology research assistant. "
-            "Use the available tools to analyse the corpus. "
-            "When you find a relevant passage, write an annotation with a concise tag. "
-            "The corpus is in German. Write every annotation in German. "
-            "Do not translate. Do not use English. "
-            "IMPORTANT: Always use document IDs returned by search_corpus or read_corpus. "
-            "Never invent or guess a document ID. "
-            "If search_corpus returns no results, try a shorter or simpler keyword (1-2 words maximum). "
-            "Do not use full sentences or phrases as search queries."
-        ),
-    },
-    {
-        "role": "user",
-        "content": "Search the corpus for uses of the word 'sublime' and annotate the three most significant passages.",
-    },
-]
+| Preset | What it uses |
+|---|---|
+| **Ollama (local)** | Local model via Ollama — no cloud, no cost |
+| **Claude (Anthropic)** | `claude-haiku-4-5-20251001` via Anthropic API — paste your `sk-ant-…` key |
+| **OpenAI** | `gpt-4o-mini` via OpenAI API — paste your `sk-…` key |
 
-# Agentic loop — the model calls tools until it is done
-for _ in range(10):
-    response = client.chat.completions.create(
-        model="qwen2.5:7b",
-        tools=tools,
-        messages=messages,
-    )
-    msg = response.choices[0].message
-    messages.append(msg)
+Example question (German corpus):
+> *Suche nach 'das Erhabene' und annotiere die drei bedeutendsten Stellen.*
 
-    if not msg.tool_calls:
-        print(msg.content)
-        break
+### Batch Annotate — systematic sweeps
 
-    for call in msg.tool_calls:
-        result = requests.post("http://localhost:3000/api/tools/call", json={
-            "name": call.function.name,
-            "arguments": call.function.arguments,
-        }).json()
-        messages.append({
-            "role": "tool",
-            "tool_call_id": call.id,
-            "content": result["result"],
-        })
-```
+Open the **Batch Annotate** card. Enter a **Concept** (what to look for) and a **Tag** (applied to every annotation). The model processes every document in the corpus in sequence.
 
-You can replace `"qwen2.5:7b"` with any Ollama model that supports tool calling, or point `base_url` at the Claude or Gemini API instead.
+- The **Skip docs already annotated with this tag** checkbox lets you resume an interrupted run safely.
+- Use the **Delay** slider to throttle requests when using a cloud API with rate limits.
+- A progress bar and live log show status per document.
+
+This is the right tool for systematic, reproducible analysis — e.g. sweeping the entire corpus for a single concept.
 
 ---
 
-## 6 · Review annotations in the browser
+## 6 · Review annotations
 
-Open the **Corpus Library** section at the bottom of the page. Click any document title to expand its annotations:
+The **middle column** of the workspace shows all pending LLM annotations for human review.
 
-- **Purple** entries are written by the AI — immutable, preserved as a record.
-- **Green** entries are yours — add corrections, interpretations, or context using the form below each document.
+For each annotation you can:
 
-Your annotations and the AI's annotations are stored separately and never overwrite each other.
+| Action | Result |
+|---|---|
+| **✓ Accept** | Marks the annotation as accepted — it stays in the dataset |
+| **✏ Edit** | Opens a text field — save a corrected version as a human annotation linked to the original |
+| **✗ Reject** | Marks the annotation as rejected — excluded from analysis |
+| **⊞ View** | Loads the full source document in the right column |
+
+The **right column** (Source Document) shows the full text of the selected document. If the annotation text appears verbatim in the source, it is highlighted in yellow so you can immediately judge it in context.
+
+Filter the review queue by tag using the filter box at the top of the middle column.
+
+Your decisions are stored in the `review_status` field and are never overwritten by subsequent sync or re-annotation runs.
 
 ---
 
@@ -169,9 +145,43 @@ Use the **Search Corpus** box. The search engine supports:
 
 | Action | How |
 |---|---|
-| Delete a single document | Click **Delete** next to it in the library |
+| Delete a single document | Click **Delete** next to it in the Corpus Library |
 | Delete everything and start fresh | Click **Delete All** in the top-right corner |
-| Watch what the AI is doing | The **Live Agent Activity** panel updates in real time |
+| Watch what the AI is doing | **Live Agent Activity** panel (left column) updates in real time |
+| Filter review queue by concept | Type a tag name in the filter box above the review queue |
+| Read the full text of any reviewed document | Click **⊞ View** on any annotation card |
+| Connect Claude Desktop | See the Claude Desktop section below |
+
+---
+
+## Connecting Claude Desktop
+
+Keel-MCP can act as an MCP server for Claude Desktop, giving Claude direct access to your corpus tools in conversation.
+
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+
+```json
+{
+  "mcpServers": {
+    "keel-mcp": {
+      "command": "/usr/local/bin/node",
+      "args": [
+        "/absolute/path/to/Keel-MCP/node_modules/.bin/tsx",
+        "/absolute/path/to/Keel-MCP/src/server.ts"
+      ],
+      "env": {
+        "DATABASE_PATH": "/absolute/path/to/Keel-MCP/keel.db"
+      }
+    }
+  }
+}
+```
+
+Replace `/absolute/path/to/Keel-MCP` with the actual path on your machine. The `DATABASE_PATH` env var is required because Claude Desktop spawns the server with a different working directory.
+
+After saving, restart Claude Desktop. Once connected, you can ask Claude directly in conversation:
+
+> *"Durchsuche das Korpus nach 'das Erhabene' und annotiere die relevantesten Stellen mit dem Tag 'kantian-sublime'."*
 
 ---
 
