@@ -29,15 +29,11 @@ Both interfaces share the same tool set. Switch models without changing anything
 | OpenAI-compatible REST API (`GET /api/tools`, `POST /api/tools/call`) | ✅ |
 | MCP over SSE (Open WebUI, Continue.dev, AnythingLLM) | ✅ |
 | MCP over stdio (Claude Desktop) | ✅ |
-| In-browser agentic query runner — Ask the AI card (no Python needed) | ✅ |
-| Batch Annotate — apply one concept to every document in a single run | ✅ |
 | Annotation Review Mode — accept / reject / correct LLM annotations | ✅ |
-| Three-column workspace — tools · review queue · source document viewer | ✅ |
-| Anthropic Claude API support — auto-detected by endpoint URL or `sk-ant-` key prefix | ✅ |
-| Model presets in UI — Ollama / Claude / OpenAI one-click config | ✅ |
+| Three-column workspace — tools · context panel · source document viewer | ✅ |
+| Click-to-view — clicking any annotation or search result loads full document in viewer | ✅ |
 | CRDT annotation model (LLM + human, append-only, never overwrites) | ✅ |
 | `review_status` field — pending / accepted / rejected, safe from sync overwrites | ✅ |
-| Live agent activity log (cross-process, SQLite WAL) | ✅ |
 | Agent memory (`remember_fact`, `recall_fact`) | ✅ |
 | Supabase sync — push/pull for corpus + annotations, dirty-count badge, ↑↓ Sync button | ✅ |
 | Auto-migration of missing SQLite columns on startup | ✅ |
@@ -63,7 +59,7 @@ Pull a local model:
 ollama pull qwen2.5:7b   # ~5 GB, best tool-calling + multilingual
 ```
 
-Open **http://localhost:3000**, upload your corpus, and ask a question in the "Ask the AI" panel.
+Open **http://localhost:3000**, upload your corpus, and connect your LLM via MCP or the REST API.
 
 ---
 
@@ -188,42 +184,17 @@ The interface is a full-viewport three-column workspace:
 
 | Column | Contents |
 |---|---|
-| **Left — Tools** | Upload corpus, Search, Ask the AI, Batch Annotate, Developer options, Agent Activity, Corpus Library |
-| **Middle — Review** | Annotation review queue — accept / reject / correct LLM annotations |
-| **Right — Viewer** | Full source document text, loaded on demand when clicking **⊞ View** on any annotation |
+| **Left — Tools** | Upload Corpus (collapsible), Search Corpus, Browse by Tag, Corpus list (collapsible) |
+| **Middle — Context** | Search results · Annotation review queue · Tag highlights — switches based on what is active |
+| **Right — Viewer** | Full source document, loaded on demand by clicking any annotation or search result |
 
 Each column scrolls independently. The viewer highlights the annotated passage in yellow when the annotation text matches verbatim in the source.
 
-### Ask the AI
+### Search
 
-Type a free-form research question in the **Ask the AI** card and click **▶ Run**. The model searches and reads the corpus using its tools and writes targeted annotations where relevant. Configure the endpoint, API key, and model using the preset buttons or set them manually:
+Type a query in the **Search Corpus** box and press Enter. Results appear in the **middle column**, replacing the review queue. Click any result to read the full document in the right column. Press **← Back** to return to the review queue.
 
-| Preset | Default model |
-|---|---|
-| **Ollama (local)** | `qwen2.5:7b` — no cloud, no cost |
-| **Claude** | `claude-haiku-4-5-20251001` — paste your `sk-ant-…` key |
-| **OpenAI** | `gpt-4o-mini` — paste your `sk-…` key |
-
-### Batch Annotate
-
-Enter a **Concept** (what to look for) and a **Tag** (applied to every annotation) in the **Batch Annotate** card. The model processes every document in sequence, streaming live progress via SSE. Use **Skip docs already annotated with this tag** to safely resume an interrupted run. The **Delay** slider throttles requests for cloud APIs with rate limits.
-
-### Review Mode
-
-The middle column shows all pending LLM annotations. For each annotation:
-
-| Action | Result |
-|---|---|
-| **✓ Accept** | Marks accepted — stays in the dataset |
-| **✏ Edit** | Opens a text field — save a corrected version as a human annotation linked to the original |
-| **✗ Reject** | Marks rejected — excluded from analysis |
-| **⊞ View** | Loads the full source document in the right column |
-
-Filter the queue by tag using the filter box at the top. Decisions are stored in `review_status` and are never overwritten by subsequent sync or re-annotation runs.
-
-### Search syntax
-
-The **Search Corpus** box supports SQLite FTS5 queries:
+Supports SQLite FTS5 syntax:
 
 | Query | Finds |
 |---|---|
@@ -232,6 +203,22 @@ The **Search Corpus** box supports SQLite FTS5 queries:
 | `Kant AND beauty` | both words in the same document |
 | `philos*` | prefix wildcard (philosophy, philosophical, …) |
 
+### Review Mode
+
+The middle column shows all pending LLM annotations. Click any annotation entry to load the full source document in the right column (the matched passage is highlighted in yellow). For each annotation:
+
+| Action | Result |
+|---|---|
+| **✓ Accept** | Marks accepted — stays in the dataset |
+| **✏ Edit** | Opens a text field — save a corrected version as a human annotation linked to the original |
+| **✗ Reject** | Marks rejected — excluded from analysis |
+
+Filter the queue by tag using the filter box at the top. Decisions are stored in `review_status` and are never overwritten by subsequent sync or re-annotation runs.
+
+### Browse by Tag
+
+Click any tag in the **Browse by Tag** card to see all highlighted passages across the corpus. Click a passage to read the full document in the right column.
+
 ---
 
 ## Architecture
@@ -239,12 +226,14 @@ The **Search Corpus** box supports SQLite FTS5 queries:
 ```
 Browser (http://localhost:3000)
     │
-    ├── POST /api/run          → Ask the AI — agentic loop (SSE stream)
-    ├── POST /api/batch-run    → Batch Annotate — per-doc agentic loop (SSE stream)
+    ├── GET  /api/search                    → full-text search (FTS5)
     ├── GET  /api/annotations/review        → review queue
     ├── PATCH /api/annotations/:id/review   → accept / reject / edit
+    ├── GET  /api/tags/summary              → tag browser
     ├── GET  /api/tools        → OpenAI tool schema
     ├── POST /api/tools/call   → tool execution
+    ├── POST /api/run          → agentic query (SSE stream, API)
+    ├── POST /api/batch-run    → batch annotate (SSE stream, API)
     ├── GET  /mcp/sse          → MCP over SSE
     └── POST /api/upload       → corpus ingestion
             │
