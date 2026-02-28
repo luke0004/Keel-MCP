@@ -1,5 +1,5 @@
 /**
- * Keel MCP — stdio entry point for Claude Desktop and MCP CLI clients.
+ * Keel — stdio entry point for Claude Desktop and MCP CLI clients.
  * Tool logic lives in mcp-server.ts; this file only wires the transport.
  */
 

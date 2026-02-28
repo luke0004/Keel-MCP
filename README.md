@@ -44,8 +44,8 @@ Then open your **Terminal**:
 Type these commands one at a time, pressing Enter after each:
 
 ```
-git clone https://github.com/luke0004/Keel-MCP.git
-cd Keel-MCP
+git clone https://github.com/luke0004/Keel.git
+cd Keel
 npm install
 npm run web
 ```
@@ -60,7 +60,7 @@ Open **http://localhost:3000** in your browser. The app is running.
 
 > **To stop the app:** go back to the Terminal and press `Ctrl + C`.
 >
-> **To start it again later:** open Terminal, type `cd Keel-MCP` then `npm run web`.
+> **To start it again later:** open Terminal, type `cd Keel` then `npm run web`.
 
 ---
 
@@ -73,7 +73,7 @@ When new features are available, you can update Keel in a few steps. Your docume
 **2. Open Terminal and navigate to the Keel folder:**
 
 ```
-cd Keel-MCP
+cd Keel
 ```
 
 **3. Download the latest version:**
@@ -198,7 +198,7 @@ This passage describes ==the concept of the sublime== #sublime in Romantic music
 
 If you want to share your corpus with collaborators or access it from another computer, you can connect a free [Supabase](https://supabase.com) project.
 
-Create a file called `.env` in the Keel-MCP folder with:
+Create a file called `.env` in the Keel folder with:
 
 ```
 SUPABASE_URL=https://your-project.supabase.co

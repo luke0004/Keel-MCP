@@ -1,4 +1,4 @@
-# Keel-MCP — Roadmap
+# Keel — Roadmap
 
 ## What Keel is
 

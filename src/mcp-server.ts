@@ -341,7 +341,7 @@ export async function handleToolCall(
 
 export function createMcpServer(): Server {
   const server = new Server(
-    { name: "keel-mcp", version: "1.0.0" },
+    { name: "keel", version: "1.0.0" },
     { capabilities: { tools: {} } },
   );
 
