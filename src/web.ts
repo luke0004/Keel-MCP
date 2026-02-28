@@ -6,7 +6,7 @@ import { getDB, initSchema, initCorpusFTS, initActivityLog, initAnnotationsTable
 import { LogbookSchema, CorpusSchema, AnnotationSchema } from './schema.js';
 import { AgentMemorySchema } from './schemas/AgentMemory.js';
 import multer from 'multer';
-import { IngestionService } from './ingestion.js';
+import { IngestionService, stripInlineMarkup } from './ingestion.js';
 import { randomUUID } from 'node:crypto';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createMcpServer, handleToolCall, pushAnnotationsBackground } from './mcp-server.js';
@@ -961,6 +961,34 @@ app.get('/api/tags/:tag/highlights', (req: any, res: any) => {
         ORDER BY cd.publication_date ASC, ca.updated_at ASC
       `).all(req.params.tag);
       res.json(rows);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Strip inline markup migration
+// ---------------------------------------------------------------------------
+
+app.post('/api/corpus/strip-markup', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare('SELECT id, content FROM corpus_documents').all() as { id: string; content: string }[];
+      const update = db.prepare('UPDATE corpus_documents SET content = ?, is_dirty = 1, updated_at = ? WHERE id = ?');
+      const now = Date.now();
+      let updated = 0;
+      db.transaction(() => {
+        for (const doc of docs) {
+          const cleaned = stripInlineMarkup(doc.content || '');
+          if (cleaned !== doc.content) {
+            update.run(cleaned, now, doc.id);
+            updated++;
+          }
+        }
+      })();
+      res.json({ updated });
     } finally { db.close(); }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

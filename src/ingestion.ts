@@ -149,6 +149,14 @@ interface InlineAnnotation {
   tag: string | null;
 }
 
+export function stripInlineMarkup(content: string): string {
+  return content
+    .replace(/==([^=\n]+?)==/g, '$1')    // ==text== → text (keep the words)
+    .replace(/#([a-zA-Z][\w-]*)/g, '')   // #tag → '' (remove tag markers)
+    .replace(/[ \t]{2,}/g, ' ')          // collapse any double spaces left behind
+    .trimEnd();
+}
+
 function extractInlineAnnotations(content: string): {
   annotations: InlineAnnotation[];
   inlineTags: string[];
@@ -244,6 +252,8 @@ export class IngestionService {
 
     // ── 5b. Extract inline annotations (==highlight== and #tags) ──────────
     const { annotations: inlineAnnotations, inlineTags } = extractInlineAnnotations(content);
+    // Strip ==...== and #tag markers from stored content (annotations already captured)
+    const cleanContent = stripInlineMarkup(content);
     // Merge inline #tags with front-matter + form tags
     const tags = [...new Set([...fmTags, ...formTags, ...inlineTags])];
 
@@ -274,7 +284,7 @@ export class IngestionService {
             (id, title, author, publication_date, content, metadata, tags,
              field_timestamps, is_dirty, last_synced_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?)
-        `).run(id, title, author, publicationDate, content, JSON.stringify(metadata), JSON.stringify(tags), now);
+        `).run(id, title, author, publicationDate, cleanContent, JSON.stringify(metadata), JSON.stringify(tags), now);
 
         if (inlineAnnotations.length > 0) {
           const insertAnn = db.prepare(`
