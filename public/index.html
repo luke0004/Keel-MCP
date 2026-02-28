@@ -359,6 +359,14 @@
       font-size: 0.82rem; color: #555; font-style: italic; line-height: 1.55;
     }
     .ann-item-note { font-size: 0.81rem; color: #333; margin-top: 0.2rem; line-height: 1.5; }
+
+    /* ── Annotation edit button ── */
+    .btn-edit-ann {
+      float: right; margin-left: 0.4rem;
+      background: none; border: none; color: #ccc;
+      cursor: pointer; padding: 0 0.2rem; font-size: 0.88rem; line-height: 1;
+    }
+    .btn-edit-ann:hover { color: #5c6bc0; background: none; }
   </style>
 </head>
 <body>
@@ -468,8 +476,12 @@
 <!-- ── Right: document viewer ── -->
 <div class="col-viewer">
 <div class="card viewer-card">
-  <div style="flex-shrink:0">
-    <h2>Document</h2>
+  <div style="flex-shrink:0; display:flex; align-items:center; justify-content:space-between">
+    <h2 style="margin:0">Document</h2>
+    <label style="font-size:0.78rem; color:#888; display:flex; align-items:center;
+                  gap:0.35rem; cursor:pointer; font-weight:normal">
+      <input type="checkbox" id="annotationsOnlyToggle"> Annotations only
+    </label>
   </div>
   <div id="viewerContent">
     <p class="viewer-placeholder">Click a document title to read it here.</p>
@@ -494,10 +506,11 @@ function parseTags(raw) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let activeTagFilter   = null;
-let activeSearchQuery = null;
-let currentDocId      = null;   // document currently open in the viewer
-let currentDocContent = null;   // raw content string of that document
+let activeTagFilter      = null;
+let activeSearchQuery    = null;
+let currentDocId         = null;   // document currently open in the viewer
+let currentDocContent    = null;   // raw content string of that document
+let showAnnotationsOnly  = false;
 
 // ── File selection & upload ───────────────────────────────────────────────────
 
@@ -662,7 +675,7 @@ function renderDocCard(doc, snippet) {
     </span>`).join('');
 
   const snippetHtml = snippet
-    ? `<div class="doc-snippet">${renderSnippet(snippet)}</div>` : '';
+    ? `<div class="doc-snippet">${doc.from_annotation ? `&ldquo;${renderSnippet(snippet)}&rdquo;` : renderSnippet(snippet)}</div>` : '';
 
   return `
     <li class="doc-card" id="doc-${docId}" data-doc-id="${docId}">
@@ -965,6 +978,11 @@ function renderAnnotationList(anns) {
         const note    = (a.text && a.text !== a.source_passage) ? a.text : '';
         return `
           <div class="ann-item" style="border-left:3px solid ${solid}">
+            <button class="btn-edit-ann" data-edit-ann="${escapeHtml(a.id)}"
+                    data-tag="${escapeHtml(a.tag || '')}"
+                    data-text="${escapeHtml(note)}"
+                    data-passage="${escapeHtml(passage)}"
+                    title="Edit annotation">✎</button>
             ${a.tag ? `<span class="ann-item-tag" style="background:${bg}">#${escapeHtml(a.tag)}</span>` : ''}
             ${passage ? `<div class="ann-item-passage">&ldquo;${escapeHtml(passage)}&rdquo;</div>` : ''}
             ${note    ? `<div class="ann-item-note">${escapeHtml(note)}</div>` : ''}
@@ -995,8 +1013,9 @@ async function viewDocument(docId) {
         ${meta ? `<div style="font-size:0.8rem; color:#aaa; margin-top:0.2rem">${escapeHtml(meta)}</div>` : ''}
         ${count ? `<div style="font-size:0.75rem; color:#7986cb; margin-top:0.2rem">${count} annotation${count !== 1 ? 's' : ''}</div>` : ''}
       </div>`;
-    const body = renderWithAnnotations(currentDocContent, selAnns);
-    panel.innerHTML = header + `<div class="viewer-body">${body}</div>` + renderAnnotationList(selAnns);
+    const body    = renderWithAnnotations(currentDocContent, selAnns);
+    const bodyHtml = showAnnotationsOnly ? '' : `<div class="viewer-body">${body}</div>`;
+    panel.innerHTML = header + bodyHtml + renderAnnotationList(selAnns);
   } catch {
     panel.innerHTML = '<span class="error">Failed to load document.</span>';
   }
@@ -1124,6 +1143,91 @@ async function saveAnnotation(sourcePassage, tag, note) {
   }
 }
 
+// ── Edit annotation (inline form) ─────────────────────────────────────────────
+
+document.getElementById('viewerContent').addEventListener('click', async e => {
+  // Pencil button — show inline edit form
+  const editBtn = e.target.closest('[data-edit-ann]');
+  if (editBtn) {
+    const { editAnn, tag, text, passage } = editBtn.dataset;
+    showAnnotationEditForm(editAnn, tag, text, passage);
+    return;
+  }
+  // Save edit
+  const saveBtn = e.target.closest('[data-save-ann-edit]');
+  if (saveBtn) { await saveAnnotationEdit(saveBtn.dataset.saveAnnEdit); return; }
+  // Cancel edit
+  const cancelBtn = e.target.closest('[data-cancel-ann-edit]');
+  if (cancelBtn) { await viewDocument(currentDocId); return; }
+});
+
+function showAnnotationEditForm(annId, tag, note, passage) {
+  const btn  = document.querySelector(`[data-edit-ann="${CSS.escape(annId)}"]`);
+  if (!btn) return;
+  const item = btn.closest('.ann-item');
+  if (!item) return;
+
+  item.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:0.4rem">
+      <div style="display:flex; gap:0.4rem; align-items:center">
+        <label style="font-size:0.74rem; color:#888; white-space:nowrap">Tag</label>
+        <input id="edit-ann-tag-${escapeHtml(annId)}" type="text" value="${escapeHtml(tag)}"
+               style="flex:1; padding:0.22rem 0.45rem; border:1px solid #c5cae9;
+                      border-radius:5px; font-size:0.8rem; font-family:inherit">
+      </div>
+      <div>
+        <label style="font-size:0.74rem; color:#888">Passage</label>
+        <textarea id="edit-ann-passage-${escapeHtml(annId)}" rows="2"
+                  style="width:100%; padding:0.22rem 0.45rem; border:1px solid #dde1ea;
+                         border-radius:5px; font-size:0.8rem; font-family:inherit;
+                         resize:vertical">${escapeHtml(passage)}</textarea>
+      </div>
+      <div>
+        <label style="font-size:0.74rem; color:#888">Note</label>
+        <input id="edit-ann-note-${escapeHtml(annId)}" type="text" value="${escapeHtml(note)}"
+               style="width:100%; padding:0.22rem 0.45rem; border:1px solid #dde1ea;
+                      border-radius:5px; font-size:0.8rem; font-family:inherit">
+      </div>
+      <div style="display:flex; gap:0.4rem">
+        <button data-save-ann-edit="${escapeHtml(annId)}"
+                style="background:#5c6bc0; color:white; border:none; border-radius:5px;
+                       padding:0.25rem 0.75rem; font-size:0.8rem; cursor:pointer; font-family:inherit">
+          Save
+        </button>
+        <button data-cancel-ann-edit="${escapeHtml(annId)}"
+                style="background:none; border:none; color:#bbb; cursor:pointer;
+                       font-size:0.8rem; font-family:inherit">
+          Cancel
+        </button>
+      </div>
+    </div>`;
+  document.getElementById('edit-ann-tag-' + annId)?.focus();
+}
+
+async function saveAnnotationEdit(annId) {
+  const tag     = document.getElementById('edit-ann-tag-'     + annId)?.value.trim() ?? '';
+  const passage = document.getElementById('edit-ann-passage-' + annId)?.value ?? '';
+  const note    = document.getElementById('edit-ann-note-'    + annId)?.value.trim() ?? '';
+
+  const body = {};
+  if (tag)     body.tag = tag.toLowerCase().replace(/\s+/g, '-');
+  if (passage) body.source_passage = passage;
+  body.text = note || null;
+
+  try {
+    const r = await fetch('/api/annotations/' + annId, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Update failed');
+    await viewDocument(currentDocId);
+    loadTagSummary();
+  } catch (err) {
+    alert('Could not update annotation: ' + err.message);
+  }
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 async function deleteDoc(id) {
@@ -1207,6 +1311,13 @@ document.querySelectorAll('details.card').forEach(d => {
     const arrow = this.querySelector('.arrow');
     if (arrow) arrow.textContent = this.open ? '▾' : '▸';
   });
+});
+
+// ── Annotations-only toggle ───────────────────────────────────────────────────
+
+document.getElementById('annotationsOnlyToggle').addEventListener('change', e => {
+  showAnnotationsOnly = e.target.checked;
+  if (currentDocId) viewDocument(currentDocId);
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

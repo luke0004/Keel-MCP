@@ -181,7 +181,28 @@ app.get('/api/search', (req: any, res: any) => {
         LIMIT 20
       `).all(pattern, pattern, pattern);
     }
-    res.json(rows);
+    // Also search annotations for tag/passage/note matches
+    const annPattern = `%${query}%`;
+    const annRows = db.prepare(`
+      SELECT cd.id, cd.title, cd.author, cd.publication_date, cd.tags,
+             ca.source_passage AS snippet
+      FROM corpus_annotations ca
+      JOIN corpus_documents cd ON ca.document_id = cd.id
+      WHERE (ca.tag LIKE ? OR ca.source_passage LIKE ? OR ca.text LIKE ?)
+        AND ca.author_type = 'human' AND ca.source_passage IS NOT NULL
+      LIMIT 20
+    `).all(annPattern, annPattern, annPattern) as Record<string, unknown>[];
+
+    // Merge: doc results take priority; annotation-only matches added with from_annotation flag
+    const seen = new Set((rows as Record<string, unknown>[]).map(r => r.id));
+    const merged: Record<string, unknown>[] = [...rows as Record<string, unknown>[]];
+    for (const ar of annRows) {
+      if (!seen.has(ar.id)) {
+        merged.push({ ...ar, from_annotation: true });
+        seen.add(ar.id as string);
+      }
+    }
+    res.json(merged);
   } finally {
     db.close();
   }
@@ -281,6 +302,35 @@ app.delete('/api/annotations/:id', (req: any, res: any) => {
       if (ann.author_type !== 'human') return res.status(403).json({ error: 'LLM annotations are immutable. Add a correction instead.' });
       db.prepare('DELETE FROM corpus_annotations WHERE id = ?').run(req.params.id);
       res.json({ status: 'deleted' });
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.patch('/api/annotations/:id', (req: any, res: any) => {
+  const { tag, text, source_passage } = req.body ?? {};
+  try {
+    const db = getDB();
+    try {
+      const ann = db.prepare('SELECT * FROM corpus_annotations WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
+      if (!ann) return res.status(404).json({ error: 'Annotation not found' });
+      if (ann.author_type !== 'human') return res.status(403).json({ error: 'Only human annotations can be edited.' });
+
+      const updates: string[] = [];
+      const params: unknown[] = [];
+      const now = Date.now();
+      if (tag !== undefined) { updates.push('tag = ?'); params.push(tag); }
+      if (text !== undefined) { updates.push('text = ?'); params.push(text); }
+      if (source_passage !== undefined) { updates.push('source_passage = ?'); params.push(source_passage); }
+
+      if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+      updates.push('is_dirty = 1', 'updated_at = ?');
+      params.push(now, req.params.id);
+
+      db.prepare(`UPDATE corpus_annotations SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      const updated = db.prepare('SELECT * FROM corpus_annotations WHERE id = ?').get(req.params.id);
+      res.json(updated);
     } finally { db.close(); }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
