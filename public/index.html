@@ -311,6 +311,54 @@
 
     /* ── Inline markup (==highlight== and #tag in viewer) ── */
     mark.inline-hl { background: #fff9c4; border-radius: 2px; padding: 0 2px; }
+
+    /* ── Annotation highlights (DB-backed, coloured by tag) ── */
+    .ann-hl {
+      border-radius: 2px; padding: 0 1px;
+      cursor: help; transition: filter 0.1s;
+    }
+    .ann-hl:hover { filter: brightness(0.88); }
+
+    /* ── Floating annotation toolbar ── */
+    #ann-toolbar {
+      background: white;
+      border: 1px solid #dde1ea;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.14);
+      padding: 0.45rem 0.7rem;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .ann-toolbar-label { font-size: 0.76rem; color: #888; white-space: nowrap; }
+
+    /* ── Annotation list (below document body) ── */
+    .ann-list {
+      margin-top: 1.8rem;
+      border-top: 1px solid #eef0f5;
+      padding-top: 1rem;
+    }
+    .ann-list-title {
+      font-size: 0.74rem; font-weight: 700; color: #aaa;
+      text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.6rem;
+    }
+    .ann-item {
+      padding: 0.45rem 0.7rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 0.45rem;
+      background: #fafbff;
+    }
+    .ann-item-tag {
+      display: inline-block; border-radius: 10px;
+      padding: 0.04rem 0.5rem; font-size: 0.73rem; font-weight: 600;
+      color: #333; margin-bottom: 0.25rem;
+    }
+    .ann-item-passage {
+      font-size: 0.82rem; color: #555; font-style: italic; line-height: 1.55;
+    }
+    .ann-item-note { font-size: 0.81rem; color: #333; margin-top: 0.2rem; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -440,6 +488,8 @@ function parseTags(raw) {
 
 let activeTagFilter   = null;
 let activeSearchQuery = null;
+let currentDocId      = null;   // document currently open in the viewer
+let currentDocContent = null;   // raw content string of that document
 
 // ── File selection & upload ───────────────────────────────────────────────────
 
@@ -829,31 +879,218 @@ function browseTag(tag) {
 
 function renderInlineMarkup(rawContent) {
   let html = escapeHtml(rawContent);
-  // ==highlight== → yellow mark
   html = html.replace(/==([^=\n]+?)==/g, (_, text) =>
     `<mark class="inline-hl">${text}</mark>`);
-  // #tag → clickable (browse by tag)
   html = html.replace(/#([a-zA-Z][\w-]*)/g, (_, tag) =>
     `<span style="color:#5c6bc0; cursor:pointer; font-weight:500"
            onclick="browseTag('${escapeHtml(tag)}')">#${tag}</span>`);
   return html;
 }
 
+// Deterministic pastel colour per tag name
+function tagColor(tag) {
+  if (!tag) return 'hsla(48,100%,72%,0.55)';
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) { h = ((h << 5) - h) + tag.charCodeAt(i); h |= 0; }
+  return `hsla(${Math.abs(h) % 360},68%,72%,0.55)`;
+}
+
+// Render document content overlaying DB annotation highlights
+function renderWithAnnotations(rawContent, annotations) {
+  if (!annotations || !annotations.length) return renderInlineMarkup(rawContent);
+
+  // Find all occurrences of each source_passage in the raw text
+  const ranges = [];
+  for (const ann of annotations) {
+    if (!ann.source_passage) continue;
+    let idx = rawContent.indexOf(ann.source_passage);
+    while (idx !== -1) {
+      ranges.push({ start: idx, end: idx + ann.source_passage.length, ann });
+      idx = rawContent.indexOf(ann.source_passage, idx + 1);
+    }
+  }
+  if (!ranges.length) return renderInlineMarkup(rawContent);
+
+  ranges.sort((a, b) => a.start - b.start);
+
+  let html = '', cursor = 0;
+  for (const r of ranges) {
+    if (r.start < cursor) continue;                     // skip overlapping ranges
+    if (r.start > cursor)
+      html += renderInlineMarkup(rawContent.slice(cursor, r.start));
+    const bg  = tagColor(r.ann.tag);
+    const tip = escapeHtml('#' + (r.ann.tag || 'note') +
+      (r.ann.text && r.ann.text !== r.ann.source_passage ? ' · ' + r.ann.text : ''));
+    html += `<mark class="ann-hl" style="background:${bg}" title="${tip}">`
+          + renderInlineMarkup(rawContent.slice(r.start, r.end))
+          + '</mark>';
+    cursor = r.end;
+  }
+  if (cursor < rawContent.length) html += renderInlineMarkup(rawContent.slice(cursor));
+  return html;
+}
+
+// Annotation list rendered below the document body
+function renderAnnotationList(anns) {
+  if (!anns.length) return '';
+  return `
+    <div class="ann-list">
+      <div class="ann-list-title">${anns.length} annotation${anns.length !== 1 ? 's' : ''}</div>
+      ${anns.map(a => {
+        const bg      = tagColor(a.tag);
+        const solid   = bg.replace('0.55)', '1)');
+        const passage = a.source_passage || '';
+        const note    = (a.text && a.text !== a.source_passage) ? a.text : '';
+        return `
+          <div class="ann-item" style="border-left:3px solid ${solid}">
+            ${a.tag ? `<span class="ann-item-tag" style="background:${bg}">#${escapeHtml(a.tag)}</span>` : ''}
+            ${passage ? `<div class="ann-item-passage">&ldquo;${escapeHtml(passage)}&rdquo;</div>` : ''}
+            ${note    ? `<div class="ann-item-note">${escapeHtml(note)}</div>` : ''}
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
 async function viewDocument(docId) {
-  const panel = document.getElementById('viewerContent');
+  currentDocId = docId;
+  const panel  = document.getElementById('viewerContent');
   panel.innerHTML = '<span style="color:#ccc; font-size:0.88rem">Loading…</span>';
   try {
-    const doc  = await fetch('/api/documents/' + docId).then(r => r.json());
-    const meta = [doc.author, doc.publication_date].filter(Boolean).join(' · ');
+    const [doc, anns] = await Promise.all([
+      fetch('/api/documents/' + docId).then(r => r.json()),
+      fetch('/api/documents/' + docId + '/annotations').then(r => r.json()).catch(() => []),
+    ]);
+    currentDocContent = doc.content || '';
+
+    const meta    = [doc.author, doc.publication_date].filter(Boolean).join(' · ');
+    // Only use annotations with a source_passage (created by selection tool)
+    const selAnns = anns.filter(a => a.source_passage && a.author_type === 'human');
+    const count   = selAnns.length;
+
     const header = `
       <div class="viewer-doc-header">
         <strong style="font-size:0.95rem">${escapeHtml(doc.title || 'Untitled')}</strong>
         ${meta ? `<div style="font-size:0.8rem; color:#aaa; margin-top:0.2rem">${escapeHtml(meta)}</div>` : ''}
+        ${count ? `<div style="font-size:0.75rem; color:#7986cb; margin-top:0.2rem">${count} annotation${count !== 1 ? 's' : ''}</div>` : ''}
       </div>`;
-    const body = renderInlineMarkup(doc.content || '');
-    panel.innerHTML = header + `<div class="viewer-body">${body}</div>`;
+    const body = renderWithAnnotations(currentDocContent, selAnns);
+    panel.innerHTML = header + `<div class="viewer-body">${body}</div>` + renderAnnotationList(selAnns);
   } catch {
     panel.innerHTML = '<span class="error">Failed to load document.</span>';
+  }
+}
+
+// ── Text-selection annotation toolbar ────────────────────────────────────────
+
+let mouseDownOnToolbar = false;
+
+document.addEventListener('mousedown', e => {
+  mouseDownOnToolbar = !!e.target.closest('#ann-toolbar');
+});
+
+document.getElementById('viewerContent').addEventListener('mouseup', () => {
+  if (mouseDownOnToolbar) return;
+  setTimeout(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !currentDocId) { hideAnnotationToolbar(); return; }
+    const text = sel.toString().trim();
+    if (text.length < 2) { hideAnnotationToolbar(); return; }
+    const range = sel.getRangeAt(0);
+    if (!document.getElementById('viewerContent').contains(range.commonAncestorContainer)) {
+      hideAnnotationToolbar(); return;
+    }
+    showAnnotationToolbar(range.getBoundingClientRect(), text);
+  }, 10);
+});
+
+function showAnnotationToolbar(selRect, selectedText) {
+  hideAnnotationToolbar();
+
+  const toolbar = document.createElement('div');
+  toolbar.id = 'ann-toolbar';
+  toolbar.innerHTML = `
+    <span class="ann-toolbar-label">Tag</span>
+    <input id="ann-tag-input" type="text" placeholder="e.g. sublime"
+           style="width:100px; padding:0.25rem 0.45rem; border:1px solid #c5cae9;
+                  border-radius:5px; font-size:0.82rem; font-family:inherit; outline:none">
+    <span class="ann-toolbar-label" style="color:#ccc">Note</span>
+    <input id="ann-note-input" type="text" placeholder="optional"
+           style="width:140px; padding:0.25rem 0.45rem; border:1px solid #e0e0e0;
+                  border-radius:5px; font-size:0.82rem; font-family:inherit; outline:none">
+    <button id="ann-save-btn"
+            style="background:#5c6bc0; color:white; border:none; border-radius:5px;
+                   padding:0.28rem 0.8rem; font-size:0.82rem; cursor:pointer; font-family:inherit">
+      Annotate
+    </button>
+    <button id="ann-cancel-btn"
+            style="background:none; border:none; color:#ccc; cursor:pointer;
+                   font-size:1.1rem; line-height:1; padding:0 0.1rem">✕</button>`;
+
+  document.body.appendChild(toolbar);
+
+  // Position: above the selection, centred, clamped to viewport
+  const tw = 550, th = 44;
+  let top  = selRect.top  - th - 8;
+  let left = selRect.left + selRect.width / 2 - tw / 2;
+  if (top < 8) top = selRect.bottom + 8;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+  toolbar.style.cssText += `position:fixed; top:${top}px; left:${left}px;`;
+
+  document.getElementById('ann-tag-input').focus();
+
+  const doSave = async () => {
+    const tag  = document.getElementById('ann-tag-input').value.trim();
+    const note = document.getElementById('ann-note-input').value.trim();
+    if (!tag) {
+      document.getElementById('ann-tag-input').style.borderColor = '#e53935';
+      document.getElementById('ann-tag-input').focus();
+      return;
+    }
+    hideAnnotationToolbar();
+    window.getSelection()?.removeAllRanges();
+    await saveAnnotation(selectedText, tag.toLowerCase().replace(/\s+/g, '-'), note);
+  };
+
+  document.getElementById('ann-save-btn').addEventListener('click', doSave);
+  document.getElementById('ann-cancel-btn').addEventListener('click', () => {
+    hideAnnotationToolbar(); window.getSelection()?.removeAllRanges();
+  });
+  for (const inputId of ['ann-tag-input', 'ann-note-input']) {
+    document.getElementById(inputId).addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); doSave(); }
+      if (e.key === 'Tab' && inputId === 'ann-tag-input')
+        { e.preventDefault(); document.getElementById('ann-note-input').focus(); }
+      if (e.key === 'Escape') { hideAnnotationToolbar(); window.getSelection()?.removeAllRanges(); }
+    });
+  }
+}
+
+function hideAnnotationToolbar() {
+  document.getElementById('ann-toolbar')?.remove();
+}
+
+async function saveAnnotation(sourcePassage, tag, note) {
+  if (!currentDocId) return;
+  const startOffset = currentDocContent ? currentDocContent.indexOf(sourcePassage) : -1;
+  const endOffset   = startOffset >= 0 ? startOffset + sourcePassage.length : -1;
+  try {
+    const r = await fetch('/api/documents/' + currentDocId + '/annotations', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_passage: sourcePassage,
+        text:           note || null,
+        tag,
+        author_id:      'researcher',
+        start_offset:   startOffset >= 0 ? startOffset : null,
+        end_offset:     endOffset   >= 0 ? endOffset   : null,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Save failed');
+    await viewDocument(currentDocId);   // refresh viewer with new highlight
+    loadTagSummary();                   // new tag may have appeared in sidebar
+  } catch (err) {
+    alert('Could not save annotation: ' + err.message);
   }
 }
 

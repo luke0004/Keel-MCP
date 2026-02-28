@@ -228,18 +228,25 @@ app.get('/api/documents/:id/annotations', (req: any, res: any) => {
 });
 
 app.post('/api/documents/:id/annotations', (req: any, res: any) => {
-  const { text, tag, corrects_id, author_id } = req.body ?? {};
-  if (!text) return res.status(400).json({ error: 'text is required' });
+  const { text, tag, corrects_id, author_id, source_passage, start_offset, end_offset } = req.body ?? {};
+  // text is optional when source_passage is provided (the passage itself is the primary content)
+  const annotationText = text || source_passage;
+  if (!annotationText) return res.status(400).json({ error: 'text or source_passage is required' });
   try {
     const db = getDB();
     try {
-      const id = randomUUID();
+      const id  = randomUUID();
       const now = Date.now();
       db.prepare(`
         INSERT INTO corpus_annotations
-          (id, document_id, text, tag, author_type, author_id, corrects_id, is_dirty, last_synced_at, updated_at)
-        VALUES (?, ?, ?, ?, 'human', ?, ?, 1, NULL, ?)
-      `).run(id, req.params.id, text, tag ?? null, author_id ?? null, corrects_id ?? null, now);
+          (id, document_id, text, tag, author_type, author_id, corrects_id,
+           source_passage, start_offset, end_offset,
+           review_status, is_dirty, last_synced_at, updated_at)
+        VALUES (?, ?, ?, ?, 'human', ?, ?, ?, ?, ?, 'accepted', 1, NULL, ?)
+      `).run(
+        id, req.params.id, annotationText, tag ?? null, author_id ?? null, corrects_id ?? null,
+        source_passage ?? null, start_offset ?? null, end_offset ?? null, now,
+      );
 
       // Propagate new tag to document (additive only)
       if (tag) {
