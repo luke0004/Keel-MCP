@@ -1011,8 +1011,10 @@ document.addEventListener('mousedown', e => {
   mouseDownOnToolbar = !!e.target.closest('#ann-toolbar');
 });
 
-document.getElementById('viewerContent').addEventListener('mouseup', () => {
+document.getElementById('viewerContent').addEventListener('mouseup', (e) => {
   if (mouseDownOnToolbar) return;
+  const mouseX = e.clientX;
+  const mouseY = e.clientY;
   setTimeout(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !currentDocId) { hideAnnotationToolbar(); return; }
@@ -1022,7 +1024,12 @@ document.getElementById('viewerContent').addEventListener('mouseup', () => {
     if (!document.getElementById('viewerContent').contains(range.commonAncestorContainer)) {
       hideAnnotationToolbar(); return;
     }
-    showAnnotationToolbar(range.getBoundingClientRect(), text);
+    // getBoundingClientRect() can return a zero rect in some browsers when called
+    // inside a setTimeout; fall back to the mouse-release coordinates in that case.
+    let selRect = range.getBoundingClientRect();
+    if (!selRect.width && !selRect.height)
+      selRect = { top: mouseY, bottom: mouseY, left: mouseX, right: mouseX, width: 0, height: 0 };
+    showAnnotationToolbar(selRect, text);
   }, 10);
 });
 
