@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import AdmZip from 'adm-zip';
 import { getDB, initSchema, initCorpusFTS, initActivityLog, initAnnotationsTable } from './db/index.js';
 import { LogbookSchema, CorpusSchema, AnnotationSchema } from './schema.js';
 import { AgentMemorySchema } from './schemas/AgentMemory.js';
@@ -989,6 +990,79 @@ app.post('/api/corpus/strip-markup', (_req, res: any) => {
         }
       })();
       res.json({ updated });
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Corpus export — zip of .md files + annotations.csv
+// ---------------------------------------------------------------------------
+
+app.get('/api/export', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare(
+        'SELECT * FROM corpus_documents ORDER BY publication_date ASC, title ASC'
+      ).all() as any[];
+      const annotations = db.prepare(
+        'SELECT * FROM corpus_annotations ORDER BY document_id, updated_at ASC'
+      ).all() as any[];
+
+      const zip = new AdmZip();
+
+      // RFC 4180 CSV quoting: always double-quote, escape " as ""
+      const q = (s: unknown) => '"' + String(s ?? '').replace(/"/g, '""') + '"';
+
+      // ── One .md per document ───────────────────────────────────────────
+      const docTitles = new Map<string, string>();
+      for (const doc of docs) {
+        docTitles.set(doc.id, doc.title);
+        const tags = JSON.parse(doc.tags || '[]') as string[];
+        const meta = JSON.parse(doc.metadata || '{}') as Record<string, unknown>;
+
+        const fm: string[] = ['---'];
+        fm.push(`title: ${q(doc.title)}`);
+        fm.push(`author: ${q(doc.author)}`);
+        fm.push(`publication_date: ${doc.publication_date}`);
+        if (meta.source) fm.push(`source: ${q(meta.source)}`);
+        if (tags.length) fm.push(`tags: [${tags.join(', ')}]`);
+        fm.push('---', '', doc.content || '');
+
+        const slug = String(doc.title)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 80) || doc.id;
+
+        zip.addFile(`documents/${slug}.md`, Buffer.from(fm.join('\n'), 'utf-8'));
+      }
+
+      // ── annotations.csv ───────────────────────────────────────────────
+      const header = [
+        'document_id', 'document_title', 'tag', 'source_passage',
+        'text', 'author_type', 'review_status', 'updated_at',
+      ].join(',');
+
+      const rows = annotations.map((a: any) => [
+        q(a.document_id),
+        q(docTitles.get(a.document_id) ?? ''),
+        q(a.tag),
+        q(a.source_passage),
+        q(a.text),
+        q(a.author_type),
+        q(a.review_status),
+        q(a.updated_at ? new Date(Number(a.updated_at)).toISOString() : ''),
+      ].join(','));
+
+      zip.addFile('annotations.csv', Buffer.from([header, ...rows].join('\n'), 'utf-8'));
+
+      const date = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="corpus-export-${date}.zip"`);
+      res.send(zip.toBuffer());
     } finally { db.close(); }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

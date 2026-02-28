@@ -418,6 +418,14 @@
     </div>
   </div>
 
+  <!-- Export -->
+  <div style="padding: 0 0.2rem 0.5rem; text-align:center">
+    <button id="exportBtn" class="btn-sm"
+            style="font-size:0.76rem; opacity:0.7; width:100%; background:#f3f4f6; color:#555; border:1px solid #ddd">
+      Export corpus (.zip)
+    </button>
+  </div>
+
   <!-- Danger zone -->
   <div style="padding: 0 0.2rem 0.3rem; text-align:center">
     <button id="stripMarkupBtn" class="btn-sm"
@@ -1122,6 +1130,13 @@ document.getElementById('stripMarkupBtn').addEventListener('click', async () => 
     alert(updated === 0 ? 'All documents are already clean.' : `Cleaned ${updated} document${updated > 1 ? 's' : ''}.`);
     if (updated > 0) refreshCorpus();
   } catch (err) { alert('Failed: ' + err.message); }
+});
+
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  const r = await fetch('/api/documents');
+  const docs = await r.json();
+  if (!docs.length) { alert('Nothing to export — corpus is empty.'); return; }
+  window.location.href = '/api/export';
 });
 
 document.getElementById('deleteAllBtn').addEventListener('click', async () => {

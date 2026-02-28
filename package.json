@@ -16,7 +16,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@supabase/supabase-js": "^2.97.0",
+    "@types/adm-zip": "^0.5.7",
     "@types/node": "^25.3.0",
+    "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.6.2",
     "body-parser": "^2.2.2",
     "cors": "^2.8.6",
