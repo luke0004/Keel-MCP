@@ -82,6 +82,42 @@ app.get('/api/documents/:id', (req: any, res: any) => {
   }
 });
 
+app.patch('/api/documents/:id', (req: any, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const updates: string[] = [];
+      const params: unknown[] = [];
+      const now = Date.now();
+      const { tags, title, author, publication_date } = req.body ?? {};
+
+      if (tags !== undefined) {
+        if (!Array.isArray(tags)) return res.status(400).json({ error: 'tags must be an array' });
+        updates.push('tags = ?'); params.push(JSON.stringify(tags));
+      }
+      if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+      if (author !== undefined) { updates.push('author = ?'); params.push(author); }
+      if (publication_date !== undefined) { updates.push('publication_date = ?'); params.push(publication_date); }
+
+      if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+
+      updates.push('updated_at = ?');
+      updates.push('is_dirty = 1');
+      params.push(now, req.params.id);
+
+      const result = db.prepare(
+        `UPDATE corpus_documents SET ${updates.join(', ')} WHERE id = ?`
+      ).run(...params);
+      if (result.changes === 0) return res.status(404).json({ error: 'Document not found' });
+      res.json({ success: true });
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 app.delete('/api/documents/:id', (req: any, res: any) => {
   try {
     const db = getDB();
@@ -861,6 +897,76 @@ app.post('/api/batch-run', async (req: any, res: any) => {
 
   send({ type: 'done', annotated, skipped, errors, total });
   res.end();
+});
+
+// ---------------------------------------------------------------------------
+// Tag browser endpoints
+// ---------------------------------------------------------------------------
+
+// GET /api/tags/summary
+// Returns all unique tags with doc_count (documents carrying that tag) and
+// highlight_count (human inline annotations with that tag), sorted by
+// total frequency descending.
+app.get('/api/tags/summary', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      // Aggregate per-tag document counts from the JSON tags array column
+      const docs = db.prepare('SELECT id, tags FROM corpus_documents').all() as { id: string; tags: string }[];
+      const tagDocSet = new Map<string, Set<string>>();
+      for (const doc of docs) {
+        let tagArr: string[] = [];
+        try { tagArr = JSON.parse(doc.tags || '[]'); } catch { /* skip malformed */ }
+        for (const tag of tagArr) {
+          if (!tagDocSet.has(tag)) tagDocSet.set(tag, new Set());
+          tagDocSet.get(tag)!.add(doc.id);
+        }
+      }
+
+      // Count inline highlights per tag from the annotations table
+      const hlRows = db.prepare(`
+        SELECT tag, COUNT(*) AS n
+        FROM corpus_annotations
+        WHERE author_type = 'human' AND author_id = 'inline' AND tag IS NOT NULL
+        GROUP BY tag
+      `).all() as { tag: string; n: number }[];
+      const tagHlCount = new Map<string, number>(hlRows.map(r => [r.tag, r.n]));
+
+      // Union of all tags seen in either source
+      const allTags = new Set([...tagDocSet.keys(), ...tagHlCount.keys()]);
+      const summary = [...allTags].map(tag => ({
+        tag,
+        doc_count:       tagDocSet.get(tag)?.size ?? 0,
+        highlight_count: tagHlCount.get(tag) ?? 0,
+      })).sort((a, b) => (b.doc_count + b.highlight_count) - (a.doc_count + a.highlight_count));
+
+      res.json(summary);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/tags/:tag/highlights
+// Returns all inline human annotations for a given tag, joined with their
+// document title / author / date — used to populate the highlights panel.
+app.get('/api/tags/:tag/highlights', (req: any, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const rows = db.prepare(`
+        SELECT ca.id, ca.text, ca.tag, ca.updated_at, ca.document_id,
+               cd.title AS document_title, cd.author, cd.publication_date
+        FROM corpus_annotations ca
+        JOIN corpus_documents cd ON ca.document_id = cd.id
+        WHERE ca.author_type = 'human' AND ca.author_id = 'inline' AND ca.tag = ?
+        ORDER BY cd.publication_date ASC, ca.updated_at ASC
+      `).all(req.params.tag);
+      res.json(rows);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
 });
 
 // ---------------------------------------------------------------------------

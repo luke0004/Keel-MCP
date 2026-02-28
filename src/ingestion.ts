@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDB } from './db/index.js';
-import { pushDocumentsBackground } from './mcp-server.js';
+import { pushDocumentsBackground, pushAnnotationsBackground } from './mcp-server.js';
 
 interface UploadedFile {
   originalname: string;
@@ -130,6 +130,56 @@ function normaliseTags(raw: unknown): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Inline annotation extractor
+// Scans document body for ==highlight== and #tag patterns written by the
+// researcher inline in their Markdown files.
+//
+// Pattern:  ==highlighted passage== #optional-tag
+//   - highlight: ==...== (single-line, no = inside)
+//   - tag:       #word directly after ==...== on the same line, OR any
+//               standalone #word elsewhere in the document
+//
+// Returns:
+//   annotations — { text, tag|null } for each ==...== found
+//   inlineTags  — all unique #tags found anywhere in the body
+// ---------------------------------------------------------------------------
+
+interface InlineAnnotation {
+  text: string;
+  tag: string | null;
+}
+
+function extractInlineAnnotations(content: string): {
+  annotations: InlineAnnotation[];
+  inlineTags: string[];
+} {
+  const annotations: InlineAnnotation[] = [];
+  const tagSet = new Set<string>();
+
+  // Match ==highlight== optionally followed on the same line by #tag.
+  // [^=\n]+ prevents crossing line boundaries and avoids === headings.
+  const highlightRe = /==([^=\n]+?)==(?:[ \t]*(#([a-zA-Z][\w-]*))?)?/g;
+  let m: RegExpExecArray | null;
+  while ((m = highlightRe.exec(content)) !== null) {
+    const text = m[1]!.trim();
+    const tag  = m[3] ?? null;
+    if (text) {
+      annotations.push({ text, tag });
+      if (tag) tagSet.add(tag);
+    }
+  }
+
+  // Collect all standalone #tags anywhere in the body.
+  // #word (no space after #) — distinguishes tags from Markdown headings.
+  const tagRe = /#([a-zA-Z][\w-]*)/g;
+  while ((m = tagRe.exec(content)) !== null) {
+    tagSet.add(m[1]!);
+  }
+
+  return { annotations, inlineTags: [...tagSet] };
+}
+
+// ---------------------------------------------------------------------------
 // IngestionService
 // ---------------------------------------------------------------------------
 
@@ -187,11 +237,15 @@ export class IngestionService {
     // Tags: union of front-matter + form body tags (deduplicated)
     const fmTags = normaliseTags(fm.tags);
     const formTags = normaliseTags(formBody.tags);
-    const tags = [...new Set([...fmTags, ...formTags])];
 
     // ── 5. Content — use stripped body (front-matter removed) ─────────────
     // If no front-matter was found, bodyText === rawText (unchanged).
     const content = bodyText;
+
+    // ── 5b. Extract inline annotations (==highlight== and #tags) ──────────
+    const { annotations: inlineAnnotations, inlineTags } = extractInlineAnnotations(content);
+    // Merge inline #tags with front-matter + form tags
+    const tags = [...new Set([...fmTags, ...formTags, ...inlineTags])];
 
     // ── 6. Metadata blob (keep everything for provenance) ─────────────────
     const metadata = {
@@ -208,23 +262,38 @@ export class IngestionService {
       ),
     };
 
-    // ── 7. Insert ──────────────────────────────────────────────────────────
-    const id = randomUUID();
+    // ── 7. Insert (document + inline annotations in one transaction) ───────
+    const id  = randomUUID();
     const now = Date.now();
 
     const db = getDB();
     try {
-      db.prepare(`
-        INSERT INTO corpus_documents
-          (id, title, author, publication_date, content, metadata, tags,
-           field_timestamps, is_dirty, last_synced_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?)
-      `).run(id, title, author, publicationDate, content, JSON.stringify(metadata), JSON.stringify(tags), now);
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO corpus_documents
+            (id, title, author, publication_date, content, metadata, tags,
+             field_timestamps, is_dirty, last_synced_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?)
+        `).run(id, title, author, publicationDate, content, JSON.stringify(metadata), JSON.stringify(tags), now);
+
+        if (inlineAnnotations.length > 0) {
+          const insertAnn = db.prepare(`
+            INSERT INTO corpus_annotations
+              (id, document_id, text, tag, author_type, author_id,
+               review_status, is_dirty, last_synced_at, updated_at)
+            VALUES (?, ?, ?, ?, 'human', 'inline', 'accepted', 1, NULL, ?)
+          `);
+          for (const ann of inlineAnnotations) {
+            insertAnn.run(randomUUID(), id, ann.text, ann.tag ?? null, now);
+          }
+        }
+      })();
     } finally {
       db.close();
     }
 
     pushDocumentsBackground();
+    if (inlineAnnotations.length > 0) pushAnnotationsBackground();
 
     return {
       id,
@@ -232,6 +301,7 @@ export class IngestionService {
       author,
       publication_date: publicationDate,
       tags,
+      inline_annotations: inlineAnnotations.length,
       status: 'success',
     };
   }

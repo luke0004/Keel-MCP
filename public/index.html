@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Keel-MCP | Corpus Manager</title>
+  <title>Keel · Corpus</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
 
     body {
       font-family: system-ui, -apple-system, sans-serif;
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       background: #f0f2f5;
       color: #1a1a2e;
       height: 100vh;
@@ -26,477 +25,437 @@
       border-bottom: 2px solid #dde1ea;
       padding: 0.7rem 1.5rem;
       flex-shrink: 0;
+      background: white;
     }
-    h1 { margin: 0; font-size: 1.4rem; color: #1a1a2e; }
+    h1 { margin: 0; font-size: 1.35rem; color: #1a1a2e; letter-spacing: -0.02em; }
     h1 span { color: #5c6bc0; }
-    h2 { margin: 0 0 1.2rem; font-size: 1.05rem; color: #333; }
+    h2 { margin: 0 0 0.9rem; font-size: 0.95rem; font-weight: 700; color: #333;
+         text-transform: uppercase; letter-spacing: 0.06em; }
 
     /* ── Three-column workspace ── */
     .workspace {
       display: grid;
-      grid-template-columns: 300px 1fr 1fr;
+      grid-template-columns: 255px 1fr 1fr;
       gap: 1rem;
       flex: 1;
       min-height: 0;
       padding: 1rem 1.5rem;
       overflow: hidden;
     }
-    .col-tools {
+
+    .col-sidebar {
       overflow-y: auto;
       min-height: 0;
     }
-    .col-review, .col-viewer {
+
+    .col-corpus, .col-viewer {
       overflow-y: hidden;
       min-height: 0;
       display: flex;
       flex-direction: column;
     }
-    .review-card, .viewer-card {
+
+    /* ── Cards ── */
+    .card {
+      background: white;
+      padding: 1.2rem 1.4rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      margin-bottom: 1rem;
+    }
+
+    /* ── Corpus card (fills center column) ── */
+    .corpus-card {
       flex: 1;
       min-height: 0;
       display: flex;
       flex-direction: column;
       margin-bottom: 0;
     }
-    .review-card-top, .viewer-card-top { flex-shrink: 0; }
-    #reviewQueue {
+    .corpus-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      margin-bottom: 0.5rem;
+      flex-shrink: 0;
+    }
+    .corpus-title-area { flex: 0 0 auto; }
+    .doc-count { font-size: 0.8rem; color: #aaa; font-weight: 400;
+                 text-transform: none; letter-spacing: 0; }
+
+    /* ── Search row ── */
+    .search-row {
+      display: flex;
+      gap: 0.4rem;
+      flex: 1;
+    }
+    .search-row input { flex: 1; min-width: 0; }
+
+    /* ── Filter indicator ── */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #eef0fb;
+      border-radius: 6px;
+      padding: 0.3rem 0.8rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.83rem;
+      color: #3f51b5;
+      flex-shrink: 0;
+    }
+    .filter-bar .clear-btn {
+      background: none; border: none; color: #9fa8da;
+      cursor: pointer; padding: 0; font-size: 0.85rem;
+      margin-left: auto; line-height: 1;
+    }
+    .filter-bar .clear-btn:hover { color: #c62828; background: none; }
+
+    /* ── Scrollable doc list ── */
+    .doc-list {
+      list-style: none;
+      padding: 0; margin: 0;
       flex: 1;
       overflow-y: auto;
       min-height: 0;
+    }
+
+    /* ── Document cards ── */
+    .doc-card {
+      padding: 0.75rem 2rem 0.75rem 0;
+      border-bottom: 1px solid #f0f2f5;
+      position: relative;
+    }
+    .doc-card:last-child { border-bottom: none; }
+
+    .doc-main { cursor: pointer; margin-bottom: 0.4rem; }
+    .doc-main:hover .doc-title { color: #3f51b5; }
+    .doc-title {
+      font-size: 0.9rem; font-weight: 500; color: #1a1a2e;
+      line-height: 1.35;
+    }
+    .doc-meta { font-size: 0.77rem; color: #aaa; margin-top: 0.1rem; }
+
+    .doc-snippet {
+      font-size: 0.82rem; color: #555; line-height: 1.5; margin-top: 0.3rem;
+    }
+    .doc-snippet mark {
+      background: #fff176; color: #1a1a2e; border-radius: 2px; padding: 0 1px;
+    }
+
+    /* ── Tags row ── */
+    .doc-tags {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.3rem;
+      margin-top: 0.35rem;
+    }
+
+    .tag-chip {
+      display: inline-flex;
+      align-items: center;
+      background: #e8eaf6; color: #3f51b5;
+      border-radius: 12px;
+      padding: 0.08rem 0.4rem 0.08rem 0.55rem;
+      font-size: 0.75rem; font-weight: 500;
+      cursor: pointer; white-space: nowrap;
+    }
+    .tag-chip:hover { background: #c5cae9; }
+    .tag-remove {
+      background: none; border: none;
+      color: #9fa8da; cursor: pointer;
+      padding: 0 0 0 0.15rem;
+      font-size: 0.9rem; line-height: 1;
+      display: flex; align-items: center;
+    }
+    .tag-remove:hover { color: #c62828; background: none; }
+
+    .btn-add-tag {
+      background: none;
+      border: 1px dashed #d1d5db;
+      color: #bbb;
+      border-radius: 12px;
+      padding: 0.06rem 0.55rem;
+      font-size: 0.74rem;
+      cursor: pointer; line-height: 1.6;
+    }
+    .btn-add-tag:hover { border-color: #5c6bc0; color: #5c6bc0; background: none; }
+
+    .tag-input-inline {
+      border: 1px solid #5c6bc0;
+      border-radius: 12px;
+      padding: 0.06rem 0.6rem;
+      font-size: 0.75rem;
+      outline: none;
+      width: 110px;
+      font-family: inherit;
+    }
+    .tag-confirm-btn {
+      background: #5c6bc0; color: white; border: none;
+      border-radius: 10px; padding: 0.05rem 0.5rem;
+      font-size: 0.73rem; cursor: pointer;
+    }
+    .tag-confirm-btn:hover { background: #3f51b5; }
+    .tag-cancel-btn {
+      background: none; border: none;
+      color: #bbb; cursor: pointer; font-size: 0.85rem; line-height: 1;
+    }
+    .tag-cancel-btn:hover { color: #c62828; background: none; }
+
+    /* ── Delete button (top-right of card) ── */
+    .btn-doc-delete {
+      position: absolute; top: 0.75rem; right: 0;
+      background: none; border: none;
+      color: #ddd; cursor: pointer;
+      padding: 0.1rem 0.25rem; font-size: 0.9rem;
+    }
+    .btn-doc-delete:hover { color: #e53935; background: none; }
+
+    /* ── Viewer card ── */
+    .viewer-card {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      margin-bottom: 0;
     }
     #viewerContent {
-      flex: 1;
-      overflow-y: auto;
-      min-height: 0;
-      font-size: 0.9rem;
-      line-height: 1.75;
+      flex: 1; overflow-y: auto; min-height: 0;
     }
     .viewer-placeholder {
-      color: #aaa;
-      text-align: center;
-      padding: 3rem 1rem;
-      font-size: 0.9rem;
+      color: #ccc; text-align: center;
+      padding: 4rem 1.5rem; font-size: 0.88rem; line-height: 1.6;
     }
     .viewer-doc-header {
       border-bottom: 1px solid #eef0f5;
-      padding-bottom: 0.8rem;
-      margin-bottom: 1rem;
+      padding-bottom: 0.8rem; margin-bottom: 1rem;
     }
     .viewer-body {
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: #333;
-      font-size: 0.88rem;
-      line-height: 1.75;
+      white-space: pre-wrap; word-break: break-word;
+      color: #333; font-size: 0.87rem; line-height: 1.8;
     }
-    .viewer-body mark {
-      background: #fff176;
-      border-radius: 2px;
-      padding: 0 2px;
-    }
+    .viewer-body mark { background: #fff176; border-radius: 2px; padding: 0 2px; }
 
-    .card {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 10px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      margin-bottom: 1rem;
-    }
-
-    /* ── Upload ── */
+    /* ── Upload form ── */
     .upload-area {
       border: 2px dashed #c5cae9;
-      padding: 2.5rem 2rem;
-      text-align: center;
-      border-radius: 8px;
-      cursor: pointer;
+      padding: 1.5rem 1rem;
+      text-align: center; border-radius: 8px;
+      cursor: pointer; background: #fafbff;
       transition: border-color .2s, background .2s;
-      background: #fafbff;
     }
     .upload-area:hover, .upload-area.dragover {
-      border-color: #5c6bc0;
-      background: #eef0fb;
+      border-color: #5c6bc0; background: #eef0fb;
     }
-    .upload-area p { margin: 0.3rem 0; color: #666; font-size: 0.95rem; }
-    .upload-area .hint { font-size: 0.82rem; color: #aaa; margin-top: 0.5rem; }
-    #fileName { font-weight: 600; color: #5c6bc0; min-height: 1.2rem; margin-top: 0.6rem; }
+    .upload-area p { margin: 0.2rem 0; color: #666; font-size: 0.88rem; }
+    .upload-area .hint { font-size: 0.78rem; color: #bbb; margin-top: 0.4rem; }
+    #fileName { font-weight: 600; color: #5c6bc0; min-height: 1.1rem;
+                margin-top: 0.4rem; font-size: 0.85rem; }
 
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
-    label { font-size: 0.85rem; color: #555; display: block; margin-bottom: 0.2rem; }
-    input[type="text"], input[type="date"] {
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 0.7rem 0; }
+    label { font-size: 0.8rem; color: #666; display: block; margin-bottom: 0.2rem; }
+
+    input[type="text"], input[type="date"], input[type="search"] {
       width: 100%;
-      padding: 0.5rem 0.7rem;
+      padding: 0.48rem 0.65rem;
       border: 1px solid #dde1ea;
       border-radius: 6px;
-      font-size: 0.95rem;
+      font-size: 0.88rem;
       background: #fafbff;
+      font-family: inherit;
+      color: #1a1a2e;
     }
     input:focus { outline: 2px solid #5c6bc0; border-color: transparent; }
 
     button {
-      background: #5c6bc0;
-      color: white;
-      border: none;
-      padding: 0.65rem 1.4rem;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.95rem;
-      font-weight: 500;
-      transition: background .15s;
+      background: #5c6bc0; color: white; border: none;
+      padding: 0.58rem 1.2rem; border-radius: 6px;
+      cursor: pointer; font-size: 0.88rem; font-weight: 500;
+      transition: background .15s; font-family: inherit;
     }
     button:hover { background: #3f51b5; }
     button:disabled { background: #b0bec5; cursor: not-allowed; }
     button.danger { background: #e53935; }
     button.danger:hover { background: #c62828; }
+    .btn-sm { padding: 0.38rem 0.85rem; font-size: 0.82rem; }
 
-    #uploadStatus { margin-top: 0.8rem; font-size: 0.9rem; font-weight: 500; }
+    #uploadStatus { margin-top: 0.5rem; font-size: 0.85rem; font-weight: 500; }
     .success { color: #2e7d32; }
-    .error   { color: #c62828; }
+    .error { color: #c62828; }
 
-    /* ── Search ── */
-    .search-row { display: flex; gap: 0.6rem; }
-    .search-row input { flex: 1; }
-    .search-hint { font-size: 0.8rem; color: #aaa; margin-top: 0.5rem; }
-
-    .search-result {
-      padding: 0.9rem 0;
-      border-bottom: 1px solid #eef0f5;
-      cursor: pointer;
-    }
-    .search-result:last-child { border-bottom: none; }
-    .search-result:hover strong { color: #3f51b5; }
-    .search-result strong { color: #1a1a2e; }
-    .search-result .meta { font-size: 0.82rem; color: #888; margin: 0.2rem 0; }
-    .search-result .snippet {
-      font-size: 0.88rem;
-      color: #444;
-      margin-top: 0.4rem;
-      line-height: 1.5;
-    }
-    .search-result .snippet mark {
-      background: #fff176;
-      color: #1a1a2e;
-      border-radius: 2px;
-      padding: 0 1px;
-    }
-
-    /* ── Corpus library ── */
-    .doc-list { list-style: none; padding: 0; margin: 0; }
-    .doc-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.45rem 0;
-      border-bottom: 1px solid #eef0f5;
-      gap: 0.5rem;
-    }
-    .doc-item:last-child { border-bottom: none; }
-    .doc-meta { font-size: 0.82rem; color: #888; margin-top: 0.25rem; }
-    .badge {
-      background: #e8eaf6;
-      color: #3f51b5;
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      margin-right: 0.3rem;
-    }
-    .ann-meta { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
-    .btn-sm { padding: 0.4rem 0.9rem; font-size: 0.85rem; }
-
-    /* ── Upload collapsed ── */
+    /* ── Collapsible upload card ── */
     details.card > summary {
-      list-style: none;
-      cursor: pointer;
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: #333;
-      user-select: none;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
+      list-style: none; cursor: pointer;
+      font-size: 0.88rem; font-weight: 700; color: #555;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      user-select: none; display: flex; align-items: center; gap: 0.4rem;
     }
     details.card > summary::-webkit-details-marker { display: none; }
-    details.card > summary .upload-arrow { font-size: 0.72rem; color: #aaa; }
-    details.card[open] > summary { margin-bottom: 0.8rem; }
+    details.card > summary .arrow { font-size: 0.68rem; color: #bbb; }
+    details.card[open] > summary { margin-bottom: 0.9rem; }
 
-    /* ── Inline annotation markup ── */
-    mark.inline-hl { background: #fff9c4; border-radius: 2px; padding: 0 2px; }
-    .tag-chip {
-      display: inline-block;
-      background: #e8eaf6;
-      color: #3f51b5;
-      border-radius: 12px;
-      padding: 0.05rem 0.5rem;
-      font-size: 0.8rem;
-      font-weight: 500;
-      cursor: pointer;
-      white-space: pre;
-    }
-    .tag-chip:hover { background: #c5cae9; }
-
-    /* ── Tag browser ── */
+    /* ── Tag browser (sidebar) ── */
     .tag-bar {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.3rem 0.5rem;
-      border-radius: 6px;
-      cursor: pointer;
-      margin-bottom: 0.25rem;
+      display: flex; align-items: center; gap: 0.45rem;
+      padding: 0.28rem 0.4rem; border-radius: 6px;
+      cursor: pointer; margin-bottom: 0.18rem;
       transition: background .1s;
     }
-    .tag-bar:hover { background: #f0f2f5; }
+    .tag-bar:hover { background: #f4f5f9; }
     .tag-bar.active { background: #eef0fb; }
-    .tag-bar-label { font-size: 0.88rem; color: #333; white-space: nowrap; flex: 0 0 auto; }
+    .tag-bar-label { font-size: 0.84rem; color: #444; white-space: nowrap; flex: 0 0 auto; }
     .tag-bar.active .tag-bar-label { color: #3f51b5; font-weight: 600; }
-    .tag-bar-track { flex: 1; height: 5px; background: #eef0f5; border-radius: 3px; overflow: hidden; min-width: 0; }
-    .tag-bar-fill { height: 100%; background: #5c6bc0; border-radius: 3px; }
-    .tag-bar-count { font-size: 0.75rem; color: #888; white-space: nowrap; flex: 0 0 auto; }
+    .tag-bar-track { flex: 1; height: 4px; background: #eef0f5; border-radius: 3px;
+                     overflow: hidden; min-width: 0; }
+    .tag-bar-fill { height: 100%; background: #7986cb; border-radius: 3px; }
+    .tag-bar-count { font-size: 0.72rem; color: #bbb; white-space: nowrap; flex: 0 0 auto; }
 
-    /* ── Tag highlights panel ── */
-    #tagHighlightsPanel { display: none; flex: 1; overflow-y: auto; min-height: 0; padding-top: 0.5rem; }
-    .hl-item {
-      border: 1px solid #e8eaf6;
-      border-radius: 8px;
-      padding: 0.85rem;
-      margin-bottom: 0.6rem;
-      background: #fafbff;
-      cursor: pointer;
-      transition: border-color .15s;
-    }
-    .hl-item:hover { border-color: #5c6bc0; }
-    .hl-doc-title { font-size: 0.85rem; font-weight: 600; color: #1a1a2e; margin-bottom: 0.35rem; }
-    .hl-text { font-size: 0.88rem; color: #333; line-height: 1.5; background: #fff9c4; border-radius: 4px; padding: 0.35rem 0.6rem; }
-
-    /* ── Review Mode ── */
-    .review-item {
-      border: 1px solid #e8eaf6;
-      border-radius: 8px;
-      padding: 1rem;
-      margin-bottom: 0.8rem;
-      background: #fafbff;
-      transition: opacity 0.15s;
-    }
-    .review-item-body { cursor: pointer; }
-    .review-item-body:hover .review-item-text { color: #1a1a2e; }
-    .review-item-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.5rem;
-      flex-wrap: wrap;
-    }
-    .review-doc-title {
-      font-size: 0.88rem;
-      font-weight: 600;
-      color: #1a1a2e;
-      flex: 1;
-      min-width: 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .review-item-text {
-      font-size: 0.9rem;
-      line-height: 1.55;
-      color: #333;
-      margin-bottom: 0.8rem;
-      white-space: pre-wrap;
-    }
-    .review-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    .btn-accept { background: #388e3c; }
-    .btn-accept:hover { background: #1b5e20; }
-    .btn-edit-open { background: #546e7a; }
-    .btn-edit-open:hover { background: #37474f; }
-    .edit-textarea {
-      width: 100%;
-      padding: 0.5rem 0.7rem;
-      border: 1px solid #dde1ea;
-      border-radius: 6px;
-      font-size: 0.88rem;
-      font-family: inherit;
-      resize: vertical;
-      min-height: 80px;
-      background: #fff;
-    }
+    /* ── Inline markup (==highlight== and #tag in viewer) ── */
+    mark.inline-hl { background: #fff9c4; border-radius: 2px; padding: 0 2px; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>Keel<span>-MCP</span> · Corpus Manager</h1>
+  <h1>Keel <span>· Corpus</span></h1>
   <div style="display:flex; align-items:center; gap:0.8rem">
-    <span id="syncStatusBadge" style="font-size:0.8rem; color:#aaa"></span>
-    <button id="syncBtn" style="padding:0.4rem 0.9rem; font-size:0.85rem" onclick="triggerSync()">↑↓ Sync</button>
-    <a href="/api/documents" target="_blank" style="font-size:0.85rem; color:#5c6bc0; text-decoration:none;">Raw API ↗</a>
-    <button class="danger" id="deleteAllBtn" style="padding:0.4rem 0.9rem; font-size:0.85rem">Delete All</button>
+    <span id="syncStatusBadge" style="font-size:0.78rem; color:#aaa"></span>
+    <button id="syncBtn" style="padding:0.38rem 0.85rem; font-size:0.8rem; display:none"
+            onclick="triggerSync()">↑↓ Sync</button>
+    <a href="/api/documents" target="_blank"
+       style="font-size:0.8rem; color:#aaa; text-decoration:none">API ↗</a>
   </div>
 </header>
 
 <div class="workspace">
-<div class="col-tools">
 
-<!-- Upload (collapsed by default) -->
-<details class="card">
-  <summary><span class="upload-arrow">▸</span> Upload Corpus</summary>
-  <form id="uploadForm">
-    <div class="upload-area" id="dropZone">
-      <p>Drop a <strong>folder</strong> or select files</p>
-      <p class="hint">Accepts .md and .txt · drag a whole folder to import in bulk</p>
-      <input type="file" id="fileInput" name="files" style="display:none" multiple accept=".md,.txt,text/plain,text/markdown">
-      <div id="fileName"></div>
-    </div>
+<!-- ── Left sidebar ── -->
+<div class="col-sidebar">
 
-    <div class="meta-grid">
-      <div>
-        <label>Author <span style="color:#aaa">(applied to all files)</span></label>
-        <input type="text" name="author" placeholder="e.g. Eduard Hanslick">
+  <!-- Upload (collapsed by default) -->
+  <details class="card">
+    <summary><span class="arrow">▸</span> Upload Documents</summary>
+    <form id="uploadForm">
+      <div class="upload-area" id="dropZone">
+        <p>Drop a <strong>folder</strong> or click to select files</p>
+        <p class="hint">.md and .txt files · drag a whole folder to import in bulk</p>
+        <input type="file" id="fileInput" name="files" style="display:none"
+               multiple accept=".md,.txt,text/plain,text/markdown">
+        <div id="fileName"></div>
       </div>
-      <div>
-        <label>Publication Date</label>
-        <input type="date" name="publication_date">
+
+      <div class="meta-grid">
+        <div>
+          <label>Author</label>
+          <input type="text" name="author" placeholder="e.g. Eduard Hanslick">
+        </div>
+        <div>
+          <label>Date</label>
+          <input type="date" name="publication_date">
+        </div>
       </div>
+
+      <label>Tags <span style="color:#ccc; font-size:0.77rem">(comma-separated)</span></label>
+      <input type="text" name="tags" placeholder="music, romanticism" style="margin-bottom:0.8rem">
+
+      <button type="submit" id="submitBtn">Upload</button>
+      <div id="uploadStatus"></div>
+    </form>
+  </details>
+
+  <!-- Tag / category browser -->
+  <div class="card">
+    <h2>Browse by Tag</h2>
+    <div id="tagList">
+      <span style="color:#ccc; font-size:0.85rem">Loading…</span>
     </div>
-
-    <label>Tags <span style="color:#aaa">(comma-separated)</span></label>
-    <input type="text" name="tags" placeholder="music criticism, romanticism, 19th century" style="margin-bottom:1rem">
-
-    <button type="submit" id="submitBtn">Upload Documents</button>
-    <div id="uploadStatus"></div>
-  </form>
-</details>
-
-<!-- Search -->
-<div class="card">
-  <h2>Search Corpus</h2>
-  <div class="search-row">
-    <input type="text" id="searchInput" placeholder='e.g.  sublime   "nature metaphor"   Kant AND beauty'>
-    <button type="button" id="searchBtn">Search</button>
   </div>
-  <p class="search-hint">
-    FTS5 syntax: phrases in quotes · AND / OR / NOT · prefix wildcard <code>philos*</code>
-  </p>
-</div>
 
-<!-- Browse by Tag -->
-<div class="card">
-  <h2>Browse by Tag</h2>
-  <p style="color:#666; font-size:0.85rem; margin:-0.4rem 0 1rem">
-    Tags extracted from inline <code>==highlights==</code> and <code>#tags</code> in your documents.
-    Click a tag to see all highlighted passages.
-  </p>
-  <div id="tagList"><span style="color:#aaa; font-size:0.9rem">Loading…</span></div>
-</div>
+  <!-- Danger zone -->
+  <div style="padding: 0 0.2rem 0.5rem; text-align:center">
+    <button id="deleteAllBtn" class="danger btn-sm"
+            style="font-size:0.76rem; opacity:0.65; width:100%">
+      Delete All Documents
+    </button>
+  </div>
 
-<!-- Corpus -->
-<details class="card" style="padding:1rem 1.2rem" open>
-  <summary style="font-size:0.8rem; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.06em">
-    <span class="upload-arrow">▾</span> Corpus
-  </summary>
+</div><!-- /col-sidebar -->
+
+<!-- ── Center: corpus library ── -->
+<div class="col-corpus">
+<div class="card corpus-card">
+
+  <div class="corpus-toolbar">
+    <div class="corpus-title-area">
+      <h2 style="margin:0">Library</h2>
+      <div class="doc-count" id="docCount"></div>
+    </div>
+    <div class="search-row">
+      <input type="search" id="searchInput" placeholder="Search documents…">
+      <button id="searchBtn" class="btn-sm">Search</button>
+    </div>
+  </div>
+
+  <!-- Active filter indicator (hidden by default) -->
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <span id="filterLabel"></span>
+    <button class="clear-btn" onclick="clearFilter()" title="Clear filter">× clear</button>
+  </div>
+
+  <!-- Document list -->
   <ul class="doc-list" id="docList">
-    <li style="padding:0.5rem 0; color:#aaa; font-size:0.88rem">Loading…</li>
+    <li style="padding:0.5rem 0; color:#ccc; font-size:0.88rem">Loading…</li>
   </ul>
-</details>
 
-</div><!-- /col-tools -->
-
-<!-- MIDDLE: Review Annotations -->
-<div class="col-review">
-<div class="card review-card">
-  <div class="review-card-top">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem">
-      <h2 style="margin:0">Review Annotations</h2>
-      <div style="display:flex; align-items:center; gap:0.8rem">
-        <input type="text" id="reviewTagFilter" placeholder="Filter by tag…" style="width:120px; font-size:0.85rem" oninput="filterReviewCards()">
-        <button class="btn-sm" onclick="loadReviewQueue()">↻ Refresh</button>
-      </div>
-    </div>
-    <p style="color:#666; font-size:0.85rem; margin:0.4rem 0 0.5rem">Accept, reject, or correct LLM annotations. Click an entry to read the full source text.</p>
-    <div id="reviewCounter" style="font-size:0.82rem; color:#888; margin-bottom:0.8rem"></div>
-  </div>
-  <div id="reviewQueue"><span style="color:#aaa; font-size:0.9rem">Loading…</span></div>
-
-  <!-- Tag highlights panel — shown when browsing a tag, replaces reviewQueue -->
-  <div id="tagHighlightsPanel">
-    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.9rem; flex-shrink:0">
-      <button class="btn-sm" onclick="exitTagBrowse()" style="background:#546e7a; padding:0.3rem 0.8rem">← All tags</button>
-      <strong id="tagHighlightsTitle" style="font-size:0.95rem; color:#1a1a2e"></strong>
-    </div>
-    <div id="tagHighlightsList"></div>
-  </div>
-
-  <!-- Search results panel — shown when a search is active, replaces reviewQueue -->
-  <div id="searchPanel" style="display:none; flex-direction:column; flex:1; min-height:0; overflow:hidden">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-shrink:0">
-      <strong id="searchPanelTitle" style="font-size:0.9rem; color:#555"></strong>
-      <button class="btn-sm" style="background:#546e7a; padding:0.3rem 0.8rem" onclick="clearSearch()">← Back</button>
-    </div>
-    <div id="searchResults" style="overflow-y:auto; flex:1; min-height:0"></div>
-  </div>
 </div>
-</div><!-- /col-review -->
+</div><!-- /col-corpus -->
 
-<!-- RIGHT: Source Document Viewer -->
+<!-- ── Right: document viewer ── -->
 <div class="col-viewer">
 <div class="card viewer-card">
-  <div class="viewer-card-top">
-    <h2 style="margin-bottom:0.8rem">Source Document</h2>
+  <div style="flex-shrink:0">
+    <h2>Document</h2>
   </div>
   <div id="viewerContent">
-    <p class="viewer-placeholder">Click an annotation to read the full source text here.</p>
+    <p class="viewer-placeholder">Click a document title to read it here.</p>
   </div>
 </div>
 </div><!-- /col-viewer -->
 
 </div><!-- /workspace -->
 
-<datalist id="ollamaModels">
-  <!-- Ollama / local -->
-  <option value="qwen2.5:7b">
-  <option value="qwen2.5:14b">
-  <option value="qwen2.5:32b">
-  <option value="llama3.1:8b">
-  <option value="llama3.2:3b">
-  <option value="llama3.3:70b">
-  <option value="mistral:7b">
-  <option value="gemma3:4b">
-  <option value="gemma3:12b">
-  <option value="phi4:14b">
-  <!-- OpenAI -->
-  <option value="gpt-4o">
-  <option value="gpt-4o-mini">
-  <option value="o3-mini">
-  <option value="o1">
-  <!-- Anthropic -->
-  <option value="claude-opus-4-6">
-  <option value="claude-sonnet-4-6">
-  <option value="claude-haiku-4-5-20251001">
-  <!-- Google -->
-  <option value="gemini-2.0-flash">
-  <option value="gemini-1.5-pro">
-</datalist>
-
 <script>
-// ── File selection ────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function escapeHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function parseTags(raw) {
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let activeTagFilter   = null;
+let activeSearchQuery = null;
+
+// ── File selection & upload ───────────────────────────────────────────────────
 
 const dropZone   = document.getElementById('dropZone');
 const fileInput  = document.getElementById('fileInput');
 const fileNameEl = document.getElementById('fileName');
 let selectedFiles = [];
 
-function isAllowed(name) {
-  return name.endsWith('.md') || name.endsWith('.txt');
-}
+function isAllowed(name) { return name.endsWith('.md') || name.endsWith('.txt'); }
 
-// Read all text files from a FileSystemEntry recursively
 async function readFilesFromEntry(entry, out = []) {
   if (entry.isFile) {
-    if (isAllowed(entry.name)) {
+    if (isAllowed(entry.name))
       await new Promise((res, rej) => entry.file(f => { out.push(f); res(); }, rej));
-    }
   } else if (entry.isDirectory) {
     const reader = entry.createReader();
-    // readEntries returns up to 100 entries at a time; call repeatedly until done
     let batch;
     do {
       batch = await new Promise((res, rej) => reader.readEntries(res, rej));
@@ -507,13 +466,8 @@ async function readFilesFromEntry(entry, out = []) {
 }
 
 dropZone.addEventListener('click', () => fileInput.click());
-
-dropZone.addEventListener('dragover', e => {
-  e.preventDefault();
-  dropZone.classList.add('dragover');
-});
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-
 dropZone.addEventListener('drop', async e => {
   e.preventDefault();
   dropZone.classList.remove('dragover');
@@ -523,542 +477,462 @@ dropZone.addEventListener('drop', async e => {
     const entry = item.webkitGetAsEntry?.();
     if (entry) await readFilesFromEntry(entry, files);
   }
-  if (files.length) {
-    selectedFiles = files;
-    updateFileName();
-  }
+  if (files.length) { selectedFiles = files; updateFileName(); }
 });
-
 fileInput.addEventListener('change', () => {
   selectedFiles = [...fileInput.files].filter(f => isAllowed(f.name));
   updateFileName();
 });
 
 function updateFileName() {
-  if (!selectedFiles.length) { fileNameEl.textContent = ''; return; }
-  fileNameEl.textContent = selectedFiles.length === 1
-    ? selectedFiles[0].name
-    : `${selectedFiles.length} files selected`;
+  fileNameEl.textContent = !selectedFiles.length ? '' :
+    selectedFiles.length === 1 ? selectedFiles[0].name :
+    `${selectedFiles.length} files selected`;
 }
-
-// ── Upload ────────────────────────────────────────────────────────────────────
 
 document.getElementById('uploadForm').addEventListener('submit', async e => {
   e.preventDefault();
   const btn    = document.getElementById('submitBtn');
   const status = document.getElementById('uploadStatus');
-
-  const filesToUpload = selectedFiles.length
-    ? selectedFiles
+  const files  = selectedFiles.length ? selectedFiles
     : [...(fileInput.files ?? [])].filter(f => isAllowed(f.name));
 
-  if (!filesToUpload.length) {
+  if (!files.length) {
     status.innerHTML = '<span class="error">✗ No .md or .txt files selected.</span>';
     return;
   }
 
-  btn.disabled = true;
-  btn.textContent = 'Uploading…';
-  status.textContent = '';
+  btn.disabled = true; btn.textContent = 'Uploading…'; status.textContent = '';
 
   const form = new FormData(document.getElementById('uploadForm'));
-  // Replace files field with our filtered set
   form.delete('files');
-  for (const f of filesToUpload) form.append('files', f);
-
-  // Parse tags as JSON array
-  const tags = form.get('tags');
-  if (tags) form.set('tags', JSON.stringify(String(tags).split(',').map(t => t.trim()).filter(Boolean)));
+  for (const f of files) form.append('files', f);
+  const tagsRaw = form.get('tags');
+  if (tagsRaw) form.set('tags',
+    JSON.stringify(String(tagsRaw).split(',').map(t => t.trim()).filter(Boolean)));
 
   try {
     const res  = await fetch('/api/upload', { method: 'POST', body: form });
     const data = await res.json();
     if (res.ok) {
-      const count = Array.isArray(data) ? data.length : 1;
-      const hlCount = Array.isArray(data) ? data.reduce((s, d) => s + (d.inline_annotations || 0), 0) : (data.inline_annotations || 0);
-      const hlNote  = hlCount ? ` · ${hlCount} inline annotation${hlCount !== 1 ? 's' : ''} extracted` : '';
-      status.innerHTML = `<span class="success">✓ ${count} document${count > 1 ? 's' : ''} uploaded${hlNote}.</span>`;
+      const count   = Array.isArray(data) ? data.length : 1;
+      const hlCount = Array.isArray(data)
+        ? data.reduce((s, d) => s + (d.inline_annotations || 0), 0)
+        : (data.inline_annotations || 0);
+      const hlNote  = hlCount ? ` · ${hlCount} note${hlCount !== 1 ? 's' : ''} extracted` : '';
+      status.innerHTML =
+        `<span class="success">✓ ${count} document${count > 1 ? 's' : ''} added${hlNote}.</span>`;
       document.getElementById('uploadForm').reset();
-      fileNameEl.textContent = '';
-      selectedFiles = [];
-      loadDocuments();
-      loadTagSummary();
-    } else {
-      throw new Error(data.error || 'Upload failed');
-    }
+      fileNameEl.textContent = ''; selectedFiles = [];
+      refreshCorpus();
+    } else { throw new Error(data.error || 'Upload failed'); }
   } catch (err) {
-    status.innerHTML = `<span class="error">✗ ${err.message}</span>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Upload Documents';
-  }
+    status.innerHTML = `<span class="error">✗ ${escapeHtml(err.message)}</span>`;
+  } finally { btn.disabled = false; btn.textContent = 'Upload'; }
 });
 
-// ── Search ────────────────────────────────────────────────────────────────────
+// ── Corpus view ───────────────────────────────────────────────────────────────
 
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+async function refreshCorpus() {
+  await loadDocuments();
+  await loadTagSummary();
+}
+
+async function loadDocuments() {
+  const list = document.getElementById('docList');
+  list.innerHTML = '<li style="padding:0.5rem 0; color:#ccc; font-size:0.88rem">Loading…</li>';
+  try {
+    if (activeSearchQuery) { await loadSearchResults(activeSearchQuery); return; }
+
+    const res  = await fetch('/api/documents');
+    let docs   = await res.json();
+
+    if (activeTagFilter) {
+      docs = docs.filter(doc => parseTags(doc.tags).includes(activeTagFilter));
+    }
+
+    renderDocList(docs, false);
+  } catch (err) {
+    list.innerHTML =
+      `<li class="error" style="padding:0.5rem 0">Failed to load: ${escapeHtml(err.message)}</li>`;
+  }
+}
+
+async function loadSearchResults(query) {
+  const list = document.getElementById('docList');
+  try {
+    const res  = await fetch('/api/search?q=' + encodeURIComponent(query));
+    const rows = await res.json();
+    renderDocList(rows, true);
+  } catch (err) {
+    list.innerHTML =
+      `<li class="error" style="padding:0.5rem 0">Search failed: ${escapeHtml(err.message)}</li>`;
+  }
 }
 
 function renderSnippet(raw) {
-  // Convert **match** markers from FTS5 snippet() into <mark> tags
-  return escapeHtml(raw).replace(/\*\*(.+?)\*\*/g, '<mark>$1</mark>');
+  return escapeHtml(raw || '').replace(/\*\*(.+?)\*\*/g, '<mark>$1</mark>');
 }
 
-function showSearchPanel() {
-  document.getElementById('reviewQueue').style.display = 'none';
-  document.getElementById('tagHighlightsPanel').style.display = 'none';
-  document.getElementById('searchPanel').style.display = 'flex';
+function renderDocList(docs, hasSnippets) {
+  const list    = document.getElementById('docList');
+  const countEl = document.getElementById('docCount');
+
+  if (!docs.length) {
+    const msg = activeSearchQuery ? 'No documents match your search.'
+      : activeTagFilter ? `No documents tagged #${escapeHtml(activeTagFilter)}.`
+      : 'Upload documents to get started.';
+    countEl.textContent = activeSearchQuery ? 'No results'
+      : activeTagFilter ? 'No matches' : 'Empty';
+    list.innerHTML =
+      `<li style="padding:1.5rem 0; color:#ccc; font-size:0.88rem; text-align:center">${msg}</li>`;
+    return;
+  }
+
+  countEl.textContent = `${docs.length} document${docs.length !== 1 ? 's' : ''}`;
+  list.innerHTML = docs.map(doc => renderDocCard(doc, hasSnippets ? doc.snippet : null)).join('');
 }
 
-function clearSearch() {
-  document.getElementById('searchPanel').style.display = 'none';
-  document.getElementById('searchResults').innerHTML = '';
-  document.getElementById('searchInput').value = '';
-  document.getElementById('reviewQueue').style.display = '';
+function renderDocCard(doc, snippet) {
+  const tags    = parseTags(doc.tags);
+  const docId   = doc.id;
+
+  const tagChips = tags.map(tag => `
+    <span class="tag-chip" data-tag="${escapeHtml(tag)}" data-doc-id="${docId}">
+      <span class="tag-chip-label">#${escapeHtml(tag)}</span>
+      <button class="tag-remove" data-remove-tag="${escapeHtml(tag)}"
+              data-doc-id="${docId}" title="Remove tag">×</button>
+    </span>`).join('');
+
+  const snippetHtml = snippet
+    ? `<div class="doc-snippet">${renderSnippet(snippet)}</div>` : '';
+
+  return `
+    <li class="doc-card" id="doc-${docId}" data-doc-id="${docId}">
+      <div class="doc-main" data-view-doc="${docId}">
+        <div class="doc-title">${escapeHtml(doc.title || 'Untitled')}</div>
+        <div class="doc-meta">${escapeHtml(doc.author || '—')} · ${escapeHtml(doc.publication_date || '?')}</div>
+        ${snippetHtml}
+      </div>
+      <div class="doc-tags">
+        ${tagChips}
+        <button class="btn-add-tag" data-show-tag-input="${docId}">+ tag</button>
+        <input class="tag-input-inline" id="tag-input-${docId}"
+               placeholder="type tag, press Enter" style="display:none"
+               data-doc-id="${docId}">
+        <button class="tag-confirm-btn" id="tag-save-${docId}"
+                style="display:none" data-confirm-tag="${docId}">✓</button>
+        <button class="tag-cancel-btn" id="tag-cancel-${docId}"
+                style="display:none" data-cancel-tag="${docId}">✕</button>
+      </div>
+      <button class="btn-doc-delete" data-delete-doc="${docId}" title="Delete document">✕</button>
+    </li>`;
 }
 
-function openSearchResult(el) {
-  viewDocument(el.dataset.docId);
+// ── Event delegation on doc list ──────────────────────────────────────────────
+
+document.getElementById('docList').addEventListener('click', async e => {
+  // Remove a tag chip (× button)
+  const removeBtn = e.target.closest('[data-remove-tag]');
+  if (removeBtn) {
+    e.stopPropagation();
+    await removeTag(removeBtn.dataset.docId, removeBtn.dataset.removeTag);
+    return;
+  }
+
+  // Click tag chip label → browse by tag
+  const tagChip = e.target.closest('.tag-chip');
+  if (tagChip && !e.target.closest('[data-remove-tag]')) {
+    browseTag(tagChip.dataset.tag);
+    return;
+  }
+
+  // Click doc title/meta → view document
+  const viewEl = e.target.closest('[data-view-doc]');
+  if (viewEl) { viewDocument(viewEl.dataset.viewDoc); return; }
+
+  // Show tag input
+  const addTagBtn = e.target.closest('[data-show-tag-input]');
+  if (addTagBtn) { showTagInput(addTagBtn.dataset.showTagInput); return; }
+
+  // Confirm new tag
+  const confirmBtn = e.target.closest('[data-confirm-tag]');
+  if (confirmBtn) { await commitTag(confirmBtn.dataset.confirmTag); return; }
+
+  // Cancel tag input
+  const cancelBtn = e.target.closest('[data-cancel-tag]');
+  if (cancelBtn) { hideTagInput(cancelBtn.dataset.cancelTag); return; }
+
+  // Delete document
+  const deleteBtn = e.target.closest('[data-delete-doc]');
+  if (deleteBtn) { await deleteDoc(deleteBtn.dataset.deleteDoc); return; }
+});
+
+document.getElementById('docList').addEventListener('keydown', e => {
+  const input = e.target.closest('.tag-input-inline');
+  if (!input) return;
+  const docId = input.dataset.docId;
+  if (e.key === 'Enter') { e.preventDefault(); commitTag(docId); }
+  if (e.key === 'Escape') hideTagInput(docId);
+});
+
+// ── Tag editing ───────────────────────────────────────────────────────────────
+
+function showTagInput(docId) {
+  const input      = document.getElementById('tag-input-' + docId);
+  const saveBtn    = document.getElementById('tag-save-' + docId);
+  const cancelBtn  = document.getElementById('tag-cancel-' + docId);
+  const addTagBtn  = document.querySelector(`[data-show-tag-input="${docId}"]`);
+  if (!input) return;
+  if (addTagBtn)  addTagBtn.style.display  = 'none';
+  input.style.display    = 'inline-block';
+  saveBtn.style.display  = 'inline-block';
+  cancelBtn.style.display = 'inline-block';
+  input.focus();
 }
+
+function hideTagInput(docId) {
+  const input     = document.getElementById('tag-input-' + docId);
+  const saveBtn   = document.getElementById('tag-save-' + docId);
+  const cancelBtn = document.getElementById('tag-cancel-' + docId);
+  const addTagBtn = document.querySelector(`[data-show-tag-input="${docId}"]`);
+  if (!input) return;
+  input.value = ''; input.style.display = 'none';
+  if (saveBtn)   saveBtn.style.display   = 'none';
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  if (addTagBtn) addTagBtn.style.display = '';
+}
+
+async function commitTag(docId) {
+  const input = document.getElementById('tag-input-' + docId);
+  if (!input) return;
+  const raw = input.value.trim();
+  if (!raw) { hideTagInput(docId); return; }
+  // Normalise: lowercase, spaces → hyphens
+  const tag = raw.toLowerCase().replace(/\s+/g, '-');
+  hideTagInput(docId);
+  await addTag(docId, tag);
+}
+
+async function addTag(docId, tag) {
+  try {
+    const doc  = await fetch('/api/documents/' + docId).then(r => r.json());
+    const tags = parseTags(doc.tags);
+    if (tags.includes(tag)) return;
+    await updateDocTags(docId, [...tags, tag]);
+  } catch (err) { alert('Could not add tag: ' + err.message); }
+}
+
+async function removeTag(docId, tag) {
+  try {
+    const doc  = await fetch('/api/documents/' + docId).then(r => r.json());
+    const tags = parseTags(doc.tags).filter(t => t !== tag);
+    await updateDocTags(docId, tags);
+  } catch (err) { alert('Could not remove tag: ' + err.message); }
+}
+
+async function updateDocTags(docId, tags) {
+  const r = await fetch('/api/documents/' + docId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tags }),
+  });
+  if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Update failed'); }
+  await refreshCorpus();
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
 
 async function doSearch() {
   const q = document.getElementById('searchInput').value.trim();
-  if (!q) { clearSearch(); return; }
+  if (!q) { clearFilter(); return; }
+  activeSearchQuery = q;
+  activeTagFilter   = null;
+  updateFilterBar();
+  await loadDocuments();
+}
 
-  showSearchPanel();
-  document.getElementById('searchPanelTitle').textContent = `Results for "${q}"`;
-  const container = document.getElementById('searchResults');
-  container.innerHTML = '<p style="color:#aaa; font-size:0.9rem">Searching…</p>';
-  try {
-    const res  = await fetch('/api/search?q=' + encodeURIComponent(q));
-    const rows = await res.json();
-    if (!rows.length) {
-      container.innerHTML = '<p style="color:#aaa; font-size:0.9rem">No results.</p>';
-      return;
-    }
-    container.innerHTML = rows.map(row => {
-      const tags = JSON.parse(row.tags || '[]').map(t => `<span class="badge">${escapeHtml(t)}</span>`).join('');
-      return `
-        <div class="search-result" data-doc-id="${row.id}" onclick="openSearchResult(this)">
-          <strong>${escapeHtml(row.title)}</strong>
-          <div class="meta">${escapeHtml(row.author || 'Unknown')} · ${escapeHtml(row.publication_date || '')} ${tags}</div>
-          <div class="snippet">${renderSnippet(row.snippet || '')}</div>
-        </div>`;
-    }).join('');
-  } catch (err) {
-    container.innerHTML = `<p class="error">Search failed: ${err.message}</p>`;
+function clearFilter() {
+  activeSearchQuery = null;
+  activeTagFilter   = null;
+  document.getElementById('searchInput').value = '';
+  updateFilterBar();
+  loadDocuments();
+  loadTagSummary();
+}
+
+function updateFilterBar() {
+  const bar   = document.getElementById('filterBar');
+  const label = document.getElementById('filterLabel');
+  if (activeSearchQuery) {
+    bar.style.display   = '';
+    label.textContent   = `Search: "${activeSearchQuery}"`;
+  } else if (activeTagFilter) {
+    bar.style.display   = '';
+    label.textContent   = `Tag: #${activeTagFilter}`;
+  } else {
+    bar.style.display   = 'none';
+    label.textContent   = '';
   }
 }
 
 document.getElementById('searchBtn').addEventListener('click', doSearch);
 document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
+  if (e.key === 'Escape') clearFilter();
 });
 
-// ── Corpus library ────────────────────────────────────────────────────────────
-
-async function loadDocuments() {
-  const list = document.getElementById('docList');
-  try {
-    const res  = await fetch('/api/documents');
-    const docs = await res.json();
-    if (!docs.length) {
-      list.innerHTML = '<li style="padding:0.5rem 0; color:#aaa; font-size:0.88rem">No documents yet.</li>';
-      return;
-    }
-    list.innerHTML = docs.map(doc => `
-      <li class="doc-item" style="padding:0.45rem 0; align-items:center">
-        <div style="min-width:0; flex:1; overflow:hidden">
-          <div style="font-size:0.87rem; color:#1a1a2e; white-space:nowrap; overflow:hidden; text-overflow:ellipsis" title="${escapeHtml(doc.title)}">${escapeHtml(doc.title)}</div>
-          <div class="doc-meta" style="font-size:0.75rem">${escapeHtml(doc.author || '—')} · ${escapeHtml(doc.publication_date || '?')}</div>
-        </div>
-        <button class="danger" style="padding:0.2rem 0.55rem; font-size:0.75rem; flex-shrink:0; margin-left:0.5rem" onclick="deleteDoc('${doc.id}')">✕</button>
-      </li>`).join('');
-  } catch (err) {
-    list.innerHTML = `<li class="error" style="padding:0.5rem 0">Failed to load: ${err.message}</li>`;
-  }
-}
-
-async function deleteDoc(id) {
-  if (!confirm('Delete this document and all its annotations from the corpus?')) return;
-  await fetch(`/api/documents/${id}`, { method: 'DELETE' });
-  loadDocuments();
-}
-
-// ── Review Mode ───────────────────────────────────────────────────────────────
-
-let reviewPendingCount = 0;
-const reviewAnnMap = {}; // annId → { document_id, text }
-
-async function loadReviewQueue() {
-  const tag    = document.getElementById('reviewTagFilter').value.trim();
-  const url    = '/api/annotations/review' + (tag ? '?tag=' + encodeURIComponent(tag) : '');
-  const queueEl = document.getElementById('reviewQueue');
-  queueEl.innerHTML = '<span style="color:#aaa; font-size:0.9rem">Loading…</span>';
-  try {
-    const data = await fetch(url).then(r => r.json());
-    renderReviewQueue(data.annotations || [], data.counts || []);
-  } catch (e) {
-    queueEl.innerHTML = '<span class="error">Failed to load review queue.</span>';
-  }
-}
-
-function renderReviewQueue(items, counts) {
-  const queueEl   = document.getElementById('reviewQueue');
-  const counterEl = document.getElementById('reviewCounter');
-
-  // Store for safe lookup by viewDocument (avoids HTML-encoding issues in onclick)
-  for (const ann of items) reviewAnnMap[ann.id] = { document_id: ann.document_id, text: ann.text };
-
-  const pending  = (counts.find(c => c.review_status === 'pending')  || {}).n || 0;
-  const accepted = (counts.find(c => c.review_status === 'accepted') || {}).n || 0;
-  const rejected = (counts.find(c => c.review_status === 'rejected') || {}).n || 0;
-  reviewPendingCount = pending;
-
-  const total = pending + accepted + rejected;
-  counterEl.innerHTML = total > 0
-    ? `<span id="reviewPendingSpan" style="color:#5c6bc0; font-weight:600">${pending}</span> pending · <span style="color:#388e3c">${accepted}</span> accepted · <span style="color:#c62828">${rejected}</span> rejected`
-    : '<span id="reviewPendingSpan" style="color:#aaa">0</span> pending';
-
-  if (!items.length) {
-    queueEl.innerHTML = '<p style="color:#aaa; text-align:center; padding:1rem 0">No pending annotations. Run Batch Annotate to generate some, then return here to review them.</p>';
-    return;
-  }
-
-  queueEl.innerHTML = items.map(ann => `
-    <div class="review-item" id="rev-${ann.id}" data-ann-id="${ann.id}" data-doc-id="${ann.document_id}" data-tag="${escapeHtml(ann.tag || '')}">
-      <div class="review-item-body" onclick="openReviewDoc(this)">
-        <div class="review-item-header">
-          ${ann.tag ? `<span class="badge">${escapeHtml(ann.tag)}</span>` : ''}
-          <span class="review-doc-title" title="${escapeHtml(ann.document_title)}">${escapeHtml(ann.document_title)}</span>
-          <span class="ann-meta">${escapeHtml(ann.author_id || 'llm')} · ${new Date(ann.updated_at).toLocaleDateString()}</span>
-        </div>
-        <div class="review-item-text">${escapeHtml(ann.text)}</div>
-      </div>
-      <div class="review-actions" id="rev-actions-${ann.id}">
-        <button class="btn-sm btn-accept" onclick="acceptAnnotation('${ann.id}')">✓ Accept</button>
-        <button class="btn-sm btn-edit-open" onclick="startReviewEdit('${ann.id}')">✏ Edit</button>
-        <button class="btn-sm danger" onclick="rejectAnnotation('${ann.id}')">✗ Reject</button>
-      </div>
-      <div id="rev-edit-${ann.id}" style="display:none; margin-top:0.6rem">
-        <textarea class="edit-textarea" id="rev-text-${ann.id}">${escapeHtml(ann.text)}</textarea>
-        <input type="text" id="rev-tag-${ann.id}" value="${escapeHtml(ann.tag || '')}" placeholder="Tag" style="margin-top:0.4rem; font-size:0.85rem; width:100%">
-        <div style="display:flex; gap:0.5rem; margin-top:0.5rem">
-          <button class="btn-sm" onclick="saveReviewEdit('${ann.id}')">Save correction</button>
-          <button class="btn-sm" style="background:#b0bec5; color:#333" onclick="cancelReviewEdit('${ann.id}')">Cancel</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function filterReviewCards() {
-  const filter = document.getElementById('reviewTagFilter').value.toLowerCase();
-  document.querySelectorAll('.review-item').forEach(el => {
-    el.style.display = (!filter || el.dataset.tag.toLowerCase().includes(filter)) ? '' : 'none';
-  });
-}
-
-async function acceptAnnotation(id) { await reviewAction(id, 'accept'); }
-async function rejectAnnotation(id) { await reviewAction(id, 'reject'); }
-
-function startReviewEdit(id) {
-  document.getElementById('rev-actions-' + id).style.display = 'none';
-  document.getElementById('rev-edit-' + id).style.display = 'block';
-  document.getElementById('rev-text-' + id).focus();
-}
-
-function cancelReviewEdit(id) {
-  document.getElementById('rev-edit-' + id).style.display = 'none';
-  document.getElementById('rev-actions-' + id).style.display = 'flex';
-}
-
-async function saveReviewEdit(id) {
-  const correction = document.getElementById('rev-text-' + id).value.trim();
-  const tag        = document.getElementById('rev-tag-' + id).value.trim();
-  if (!correction) { alert('Correction text cannot be empty.'); return; }
-  await reviewAction(id, 'edit', correction, tag);
-}
-
-async function reviewAction(id, action, correction, tag) {
-  try {
-    const body = { action };
-    if (correction !== undefined) body.correction = correction;
-    if (tag        !== undefined) body.tag        = tag;
-
-    const r = await fetch('/api/annotations/' + id + '/review', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error((await r.json()).error);
-
-    // Fade card out and remove
-    const card = document.getElementById('rev-' + id);
-    if (card) {
-      card.style.opacity = '0';
-      setTimeout(() => {
-        card.remove();
-        reviewPendingCount = Math.max(0, reviewPendingCount - 1);
-        const span = document.getElementById('reviewPendingSpan');
-        if (span) span.textContent = reviewPendingCount;
-        if (document.querySelectorAll('.review-item').length === 0) {
-          document.getElementById('reviewQueue').innerHTML =
-            '<p style="color:#388e3c; text-align:center; padding:1rem 0">✓ All done — no pending annotations.</p>';
-        }
-      }, 160);
-    }
-
-    if (action === 'edit') loadDocuments(); // refresh doc annotation counts
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-}
-
-// ── Supabase sync ─────────────────────────────────────────────────────────────
-
-async function pollSyncStatus() {
-  try {
-    const r   = await fetch('/api/sync/status');
-    const s   = await r.json();
-    const el  = document.getElementById('syncStatusBadge');
-    const btn = document.getElementById('syncBtn');
-
-    if (!s.configured) {
-      el.textContent   = 'Supabase not configured';
-      el.style.color   = '#aaa';
-      btn.disabled     = true;
-      btn.title        = 'Add SUPABASE_URL and SUPABASE_KEY to .env to enable sync';
-      return;
-    }
-
-    const dirty = (s.dirty_documents || 0) + (s.dirty_annotations || 0);
-    btn.disabled = false;
-    if (dirty > 0) {
-      el.textContent = `${dirty} unsynced`;
-      el.style.color = '#e65100';
-    } else {
-      const lastRaw = s.last_synced_documents || s.last_synced_annotations;
-      el.textContent = lastRaw ? `Synced ${new Date(lastRaw).toLocaleTimeString()}` : 'Not synced yet';
-      el.style.color = '#2e7d32';
-    }
-  } catch { /* ignore poll errors */ }
-}
-
-async function triggerSync() {
-  const btn = document.getElementById('syncBtn');
-  const el  = document.getElementById('syncStatusBadge');
-  btn.disabled    = true;
-  btn.textContent = '↑↓ Syncing…';
-  el.textContent  = 'Syncing…';
-  el.style.color  = '#5c6bc0';
-  try {
-    const r    = await fetch('/api/sync', { method: 'POST' });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error);
-    await pollSyncStatus();
-    loadDocuments(); // annotations may have arrived from Supabase
-  } catch (err) {
-    el.textContent = '✗ Sync failed';
-    el.style.color = '#c62828';
-    alert('Sync failed: ' + err.message);
-  } finally {
-    btn.disabled    = false;
-    btn.textContent = '↑↓ Sync';
-  }
-}
-
-// Poll sync status every 10 s so the dirty count stays current
-setInterval(pollSyncStatus, 10000);
-
-// ── Delete all ────────────────────────────────────────────────────────────────
-
-document.getElementById('deleteAllBtn').addEventListener('click', async () => {
-  const res = await fetch('/api/documents');
-  const docs = await res.json();
-  const count = docs.length;
-  if (!count) { alert('Corpus is already empty.'); return; }
-  if (!confirm(`Delete all ${count} document${count > 1 ? 's' : ''} and their annotations? This cannot be undone.`)) return;
-  try {
-    const r = await fetch('/api/corpus', { method: 'DELETE' });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error);
-    loadDocuments();
-  } catch (err) {
-    alert('Delete failed: ' + err.message);
-  }
-});
-
-// ── Collapsible card toggle arrows ────────────────────────────────────────────
-document.querySelectorAll('details.card').forEach(d => {
-  d.addEventListener('toggle', function () {
-    const arrow = this.querySelector('.upload-arrow');
-    if (arrow) arrow.textContent = this.open ? '▾' : '▸';
-  });
-});
-
-// ── Inline markup rendering ───────────────────────────────────────────────────
-// Converts researcher's inline ==highlight== and #tag notation into styled HTML.
-// Must be called on raw (unescaped) content — it applies escapeHtml internally.
-
-function renderInlineMarkup(rawContent) {
-  // Step 1: escape HTML entities to prevent XSS
-  let html = escapeHtml(rawContent);
-  // Step 2: render ==highlight== as yellow marks
-  html = html.replace(/==([^=\n]+?)==/g, (_, text) =>
-    `<mark class="inline-hl">${text}</mark>`
-  );
-  // Step 3: render #tag (no space after #) as clickable tag chips
-  // The [a-zA-Z] prefix ensures Markdown headings (# Word) are not matched.
-  html = html.replace(/#([a-zA-Z][\w-]*)/g, (_, tag) =>
-    `<span class="tag-chip" onclick="browseTag('${tag}')">#${tag}</span>`
-  );
-  return html;
-}
-
-// ── Document viewer ───────────────────────────────────────────────────────────
-
-function openReviewDoc(bodyEl) {
-  const item = bodyEl.closest('.review-item');
-  viewDocument(item.dataset.docId, reviewAnnMap[item.dataset.annId]?.text);
-}
-
-let hlTextMap = {};
-function openHlItem(el) {
-  const entry = hlTextMap[el.dataset.hl];
-  if (entry) viewDocument(entry.docId, entry.text);
-}
-
-async function viewDocument(docId, annotationText) {
-  const panel = document.getElementById('viewerContent');
-  panel.innerHTML = '<span style="color:#aaa; font-size:0.9rem">Loading…</span>';
-
-  try {
-    const doc = await fetch('/api/documents/' + docId).then(r => r.json());
-
-    const meta = [doc.author, doc.publication_date].filter(Boolean).join(' · ');
-    const header = `<div class="viewer-doc-header">
-      <strong style="font-size:0.95rem">${escapeHtml(doc.title || 'Untitled')}</strong>
-      ${meta ? `<div style="font-size:0.82rem; color:#888; margin-top:0.2rem">${escapeHtml(meta)}</div>` : ''}
-    </div>`;
-
-    // Render inline ==highlights== and #tags, then optionally highlight the
-    // annotation passage that was clicked in the review queue or tag panel.
-    let body = renderInlineMarkup(doc.content || '');
-    if (annotationText) {
-      const needle = escapeHtml(annotationText);
-      const idx = body.indexOf(needle);
-      if (idx >= 0) {
-        body = body.slice(0, idx)
-          + '<mark>' + needle + '</mark>'
-          + body.slice(idx + needle.length);
-      }
-    }
-
-    panel.innerHTML = header + `<div class="viewer-body">${body}</div>`;
-
-    const mark = panel.querySelector('mark');
-    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  } catch (e) {
-    console.error('viewDocument error:', e);
-    panel.innerHTML = `<span class="error">Failed to load document: ${escapeHtml(String(e))}</span>`;
-  }
-}
-
-// ── Tag browser ───────────────────────────────────────────────────────────────
-
-let activeTag = null;
+// ── Tag browser (sidebar) ─────────────────────────────────────────────────────
 
 async function loadTagSummary() {
   const container = document.getElementById('tagList');
   try {
     const tags = await fetch('/api/tags/summary').then(r => r.json());
     if (!tags.length) {
-      container.innerHTML = '<span style="color:#aaa; font-size:0.9rem">No tags yet. Upload documents with <code>==highlights==</code> or <code>#tags</code> to see them here.</span>';
+      container.innerHTML =
+        '<span style="color:#ccc; font-size:0.83rem; line-height:1.6">' +
+        'No tags yet. Add tags to your documents to see them here.</span>';
       return;
     }
     const maxScore = Math.max(...tags.map(t => t.doc_count + t.highlight_count), 1);
     container.innerHTML = tags.map(t => {
-      const isActive = activeTag === t.tag;
-      const pct = Math.max(4, Math.round((t.doc_count + t.highlight_count) / maxScore * 100));
-      const countLabel = [
-        t.doc_count ? `${t.doc_count} doc${t.doc_count !== 1 ? 's' : ''}` : '',
-        t.highlight_count ? `${t.highlight_count} hl` : '',
-      ].filter(Boolean).join(' · ');
-      return `<div class="tag-bar${isActive ? ' active' : ''}" onclick="browseTag('${escapeHtml(t.tag)}')">
-        <span class="tag-bar-label">#${escapeHtml(t.tag)}</span>
-        <div class="tag-bar-track"><div class="tag-bar-fill" style="width:${pct}%"></div></div>
-        <span class="tag-bar-count">${countLabel}</span>
-      </div>`;
-    }).join('');
-  } catch (err) {
-    container.innerHTML = `<span class="error" style="font-size:0.85rem">Failed to load tags: ${err.message}</span>`;
-  }
-}
-
-async function browseTag(tag) {
-  activeTag = tag;
-  document.getElementById('reviewQueue').style.display = 'none';
-  document.getElementById('searchPanel').style.display = 'none';
-  document.getElementById('tagHighlightsPanel').style.display = 'block';
-  document.getElementById('tagHighlightsTitle').textContent = `#${tag}`;
-
-  const list = document.getElementById('tagHighlightsList');
-  list.innerHTML = '<span style="color:#aaa; font-size:0.9rem">Loading…</span>';
-
-  try {
-    const highlights = await fetch('/api/tags/' + encodeURIComponent(tag) + '/highlights').then(r => r.json());
-    if (!highlights.length) {
-      list.innerHTML = '<p style="color:#aaa; text-align:center; padding:1rem 0">No inline highlights for this tag yet.</p>';
-    } else {
-      hlTextMap = {};
-      list.innerHTML = highlights.map((h, i) => {
-        hlTextMap[i] = { docId: h.document_id, text: h.text };
-        return `
-        <div class="hl-item" data-hl="${i}" onclick="openHlItem(this)">
-          <div class="hl-doc-title">${escapeHtml(h.document_title)}<span style="font-weight:400; color:#888"> · ${escapeHtml(h.publication_date || '')}</span></div>
-          <div class="hl-text">${escapeHtml(h.text)}</div>
+      const isActive   = activeTagFilter === t.tag;
+      const pct        = Math.max(4, Math.round((t.doc_count + t.highlight_count) / maxScore * 100));
+      const countLabel = t.doc_count ? `${t.doc_count} doc${t.doc_count !== 1 ? 's' : ''}` : '';
+      return `
+        <div class="tag-bar${isActive ? ' active' : ''}" data-browse-tag="${escapeHtml(t.tag)}">
+          <span class="tag-bar-label">#${escapeHtml(t.tag)}</span>
+          <div class="tag-bar-track"><div class="tag-bar-fill" style="width:${pct}%"></div></div>
+          <span class="tag-bar-count">${countLabel}</span>
         </div>`;
-      }).join('');
-    }
-  } catch (err) {
-    list.innerHTML = `<span class="error" style="font-size:0.85rem">Failed to load highlights: ${err.message}</span>`;
+    }).join('');
+  } catch {
+    container.innerHTML = '<span class="error" style="font-size:0.82rem">Failed to load tags.</span>';
   }
-
-  loadTagSummary(); // refresh active state in tag bar
 }
 
-function exitTagBrowse() {
-  activeTag = null;
-  document.getElementById('tagHighlightsPanel').style.display = 'none';
-  document.getElementById('reviewQueue').style.display = '';
-  loadTagSummary(); // clear active state
+document.getElementById('tagList').addEventListener('click', e => {
+  const bar = e.target.closest('[data-browse-tag]');
+  if (bar) browseTag(bar.dataset.browseTag);
+});
+
+function browseTag(tag) {
+  activeTagFilter   = tag;
+  activeSearchQuery = null;
+  document.getElementById('searchInput').value = '';
+  updateFilterBar();
+  loadDocuments();
+  loadTagSummary();
 }
+
+// ── Document viewer ───────────────────────────────────────────────────────────
+
+function renderInlineMarkup(rawContent) {
+  let html = escapeHtml(rawContent);
+  // ==highlight== → yellow mark
+  html = html.replace(/==([^=\n]+?)==/g, (_, text) =>
+    `<mark class="inline-hl">${text}</mark>`);
+  // #tag → clickable (browse by tag)
+  html = html.replace(/#([a-zA-Z][\w-]*)/g, (_, tag) =>
+    `<span style="color:#5c6bc0; cursor:pointer; font-weight:500"
+           onclick="browseTag('${escapeHtml(tag)}')">#${tag}</span>`);
+  return html;
+}
+
+async function viewDocument(docId) {
+  const panel = document.getElementById('viewerContent');
+  panel.innerHTML = '<span style="color:#ccc; font-size:0.88rem">Loading…</span>';
+  try {
+    const doc  = await fetch('/api/documents/' + docId).then(r => r.json());
+    const meta = [doc.author, doc.publication_date].filter(Boolean).join(' · ');
+    const header = `
+      <div class="viewer-doc-header">
+        <strong style="font-size:0.95rem">${escapeHtml(doc.title || 'Untitled')}</strong>
+        ${meta ? `<div style="font-size:0.8rem; color:#aaa; margin-top:0.2rem">${escapeHtml(meta)}</div>` : ''}
+      </div>`;
+    const body = renderInlineMarkup(doc.content || '');
+    panel.innerHTML = header + `<div class="viewer-body">${body}</div>`;
+  } catch {
+    panel.innerHTML = '<span class="error">Failed to load document.</span>';
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+async function deleteDoc(id) {
+  if (!confirm('Delete this document from the corpus? This cannot be undone.')) return;
+  await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+  refreshCorpus();
+}
+
+document.getElementById('deleteAllBtn').addEventListener('click', async () => {
+  const res   = await fetch('/api/documents');
+  const docs  = await res.json();
+  const count = docs.length;
+  if (!count) { alert('The corpus is already empty.'); return; }
+  if (!confirm(
+    `Delete all ${count} document${count > 1 ? 's' : ''} and their notes?\nThis cannot be undone.`
+  )) return;
+  try {
+    const r = await fetch('/api/corpus', { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error);
+    refreshCorpus();
+  } catch (err) { alert('Delete failed: ' + err.message); }
+});
+
+// ── Supabase sync ─────────────────────────────────────────────────────────────
+
+async function pollSyncStatus() {
+  try {
+    const s   = await fetch('/api/sync/status').then(r => r.json());
+    const el  = document.getElementById('syncStatusBadge');
+    const btn = document.getElementById('syncBtn');
+    if (!s.configured) { el.textContent = ''; btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    const dirty = (s.dirty_documents || 0) + (s.dirty_annotations || 0);
+    if (dirty > 0) { el.textContent = `${dirty} unsynced`; el.style.color = '#e65100'; }
+    else {
+      const lastRaw = s.last_synced_documents || s.last_synced_annotations;
+      el.textContent = lastRaw ? `Synced ${new Date(lastRaw).toLocaleTimeString()}` : 'Not synced';
+      el.style.color = '#2e7d32';
+    }
+  } catch { /* ignore */ }
+}
+
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  const el  = document.getElementById('syncStatusBadge');
+  btn.disabled = true; btn.textContent = 'Syncing…';
+  el.textContent = 'Syncing…'; el.style.color = '#5c6bc0';
+  try {
+    const r    = await fetch('/api/sync', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    await pollSyncStatus();
+    loadDocuments();
+  } catch (err) {
+    el.textContent = '✗ Sync failed'; el.style.color = '#c62828';
+    alert('Sync failed: ' + err.message);
+  } finally { btn.disabled = false; btn.textContent = '↑↓ Sync'; }
+}
+
+setInterval(pollSyncStatus, 10000);
+
+// ── Collapsible card arrows ───────────────────────────────────────────────────
+
+document.querySelectorAll('details.card').forEach(d => {
+  d.addEventListener('toggle', function () {
+    const arrow = this.querySelector('.arrow');
+    if (arrow) arrow.textContent = this.open ? '▾' : '▸';
+  });
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 loadDocuments();
-loadReviewQueue();
 loadTagSummary();
 pollSyncStatus();
 
-// Populate model datalist from Ollama (best-effort, falls back to hardcoded options)
-(async () => {
-  try {
-    const res = await fetch('http://localhost:11434/api/tags');
-    if (!res.ok) return;
-    const { models } = await res.json();
-    if (!Array.isArray(models) || !models.length) return;
-    const dl = document.getElementById('ollamaModels');
-    dl.innerHTML = models
-      .map(m => `<option value="${m.name}">`)
-      .join('');
-  } catch { /* Ollama not running — keep hardcoded fallbacks */ }
-})();
 </script>
-
 </body>
 </html>
