@@ -786,13 +786,18 @@ async function removeTag(docId, tag) {
     const tags = parseTags(doc.tags).filter(t => t !== tag);
     await updateDocTags(docId, tags);          // patches + refreshCorpus()
 
-    // Delete orphaned inline annotations for the removed tag
+    // Delete inline annotations for the removed tag (including null-tagged highlights,
+    // which have no explicit #tag but were imported alongside this document's tags).
     const anns = await fetch('/api/documents/' + docId + '/annotations').then(r => r.json());
-    const orphans = anns.filter(a => a.tag === tag && a.author_id === 'inline');
+    const remainingTags = tags; // already filtered above
+    const orphans = anns.filter(a =>
+      a.author_id === 'inline' &&
+      (a.tag === tag || (a.tag == null && remainingTags.length === 0))
+    );
     await Promise.all(orphans.map(a =>
       fetch('/api/annotations/' + a.id, { method: 'DELETE' })
     ));
-    if (orphans.length > 0 && currentDocId === docId) {
+    if (currentDocId === docId) {
       await viewDocument(docId);               // re-render viewer without ghost highlights
     }
   } catch (err) { alert('Could not remove tag: ' + err.message); }
@@ -1018,12 +1023,9 @@ document.getElementById('viewerContent').addEventListener('mouseup', (e) => {
     if (!document.getElementById('viewerContent').contains(range.commonAncestorContainer)) {
       hideAnnotationToolbar(); return;
     }
-    // getBoundingClientRect() can return a zero rect in some browsers when called
-    // inside a setTimeout; fall back to the mouse-release coordinates in that case.
-    let selRect = range.getBoundingClientRect();
-    if (!selRect.width && !selRect.height)
-      selRect = { top: mouseY, bottom: mouseY, left: mouseX, right: mouseX, width: 0, height: 0 };
-    showAnnotationToolbar(selRect, text);
+    // Use mouse-release position — more reliable than range.getBoundingClientRect()
+    // which can return wrong coordinates inside a setTimeout in some browsers.
+    showAnnotationToolbar({ top: mouseY, bottom: mouseY, left: mouseX, right: mouseX, width: 0, height: 0 }, text);
   }, 10);
 });
 
