@@ -289,12 +289,22 @@ export class IngestionService {
         if (inlineAnnotations.length > 0) {
           const insertAnn = db.prepare(`
             INSERT INTO corpus_annotations
-              (id, document_id, text, tag, author_type, author_id,
-               review_status, is_dirty, last_synced_at, updated_at)
-            VALUES (?, ?, ?, ?, 'human', 'inline', 'accepted', 1, NULL, ?)
+              (id, document_id, text, tag, source_passage, start_offset, end_offset,
+               author_type, author_id, review_status, is_dirty, last_synced_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'human', 'inline', 'accepted', 1, NULL, ?)
           `);
+          let searchFrom = 0;
           for (const ann of inlineAnnotations) {
-            insertAnn.run(randomUUID(), id, ann.text, ann.tag ?? null, now);
+            const start = cleanContent.indexOf(ann.text, searchFrom);
+            const end   = start >= 0 ? start + ann.text.length : -1;
+            insertAnn.run(
+              randomUUID(), id, ann.text, ann.tag ?? null,
+              ann.text,                          // source_passage = the passage itself
+              start >= 0 ? start : null,
+              end   >= 0 ? end   : null,
+              now
+            );
+            if (start >= 0) searchFrom = start + 1;
           }
         }
       })();
