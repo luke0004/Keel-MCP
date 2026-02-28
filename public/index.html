@@ -1144,8 +1144,9 @@ document.getElementById('stripMarkupBtn').addEventListener('click', async () => 
   try {
     const r = await fetch('/api/corpus/strip-markup', { method: 'POST' });
     if (!r.ok) {
+      const body = await r.text();
       let msg = `HTTP ${r.status}`;
-      try { msg = (await r.json()).error || msg; } catch { msg = await r.text() || msg; }
+      try { msg = JSON.parse(body).error || msg; } catch { msg = body || msg; }
       throw new Error(msg);
     }
     const { updated } = await r.json();
@@ -1174,8 +1175,9 @@ document.getElementById('deleteAllBtn').addEventListener('click', async () => {
   try {
     const r = await fetch('/api/corpus', { method: 'DELETE' });
     if (!r.ok) {
+      const body = await r.text();
       let msg = `HTTP ${r.status}`;
-      try { msg = (await r.json()).error || msg; } catch { msg = await r.text() || msg; }
+      try { msg = JSON.parse(body).error || msg; } catch { msg = body || msg; }
       throw new Error(msg);
     }
     refreshCorpus();
