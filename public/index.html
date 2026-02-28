@@ -360,6 +360,20 @@
     }
     .ann-item-note { font-size: 0.81rem; color: #333; margin-top: 0.2rem; line-height: 1.5; }
 
+    /* ── Sort select ── */
+    .sort-select {
+      padding: 0.4rem 0.5rem;
+      border: 1px solid #dde1ea;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-family: inherit;
+      color: #555;
+      background: #fafbff;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .sort-select:focus { outline: 2px solid #5c6bc0; border-color: transparent; }
+
     /* ── Annotation edit button ── */
     .btn-edit-ann {
       float: right; margin-left: 0.4rem;
@@ -457,6 +471,12 @@
       <input type="search" id="searchInput" placeholder="Search documents…">
       <button id="searchBtn" class="btn-sm">Search</button>
     </div>
+    <select id="sortSelect" class="sort-select" title="Sort order">
+      <option value="date-asc">Date ↑</option>
+      <option value="date-desc">Date ↓</option>
+      <option value="alpha-asc">A → Z</option>
+      <option value="alpha-desc">Z → A</option>
+    </select>
   </div>
 
   <!-- Active filter indicator (hidden by default) -->
@@ -511,6 +531,7 @@ let activeSearchQuery    = null;
 let currentDocId         = null;   // document currently open in the viewer
 let currentDocContent    = null;   // raw content string of that document
 let showAnnotationsOnly  = false;
+let currentSort          = 'date-asc';
 
 // ── File selection & upload ───────────────────────────────────────────────────
 
@@ -644,6 +665,16 @@ function renderSnippet(raw) {
   return escapeHtml(raw || '').replace(/\*\*(.+?)\*\*/g, '<mark>$1</mark>');
 }
 
+function sortDocs(docs) {
+  const [field, dir] = currentSort.split('-');
+  return [...docs].sort((a, b) => {
+    const va = field === 'date' ? (a.publication_date || '') : (a.title || '').toLowerCase();
+    const vb = field === 'date' ? (b.publication_date || '') : (b.title || '').toLowerCase();
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
 function renderDocList(docs, hasSnippets) {
   const list    = document.getElementById('docList');
   const countEl = document.getElementById('docCount');
@@ -660,7 +691,7 @@ function renderDocList(docs, hasSnippets) {
   }
 
   countEl.textContent = `${docs.length} document${docs.length !== 1 ? 's' : ''}`;
-  list.innerHTML = docs.map(doc => renderDocCard(doc, hasSnippets ? doc.snippet : null)).join('');
+  list.innerHTML = sortDocs(docs).map(doc => renderDocCard(doc, hasSnippets ? doc.snippet : null)).join('');
 }
 
 function renderDocCard(doc, snippet) {
@@ -860,6 +891,11 @@ function updateFilterBar() {
     label.textContent   = '';
   }
 }
+
+document.getElementById('sortSelect').addEventListener('change', e => {
+  currentSort = e.target.value;
+  loadDocuments();
+});
 
 document.getElementById('searchBtn').addEventListener('click', doSearch);
 document.getElementById('searchInput').addEventListener('keydown', e => {
