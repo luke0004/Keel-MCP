@@ -427,12 +427,6 @@
   </div>
 
   <!-- Danger zone -->
-  <div style="padding: 0 0.2rem 0.3rem; text-align:center">
-    <button id="stripMarkupBtn" class="btn-sm"
-            style="font-size:0.76rem; opacity:0.7; width:100%; background:#f3f4f6; color:#555; border:1px solid #ddd">
-      Clean markup from text
-    </button>
-  </div>
   <div style="padding: 0 0.2rem 0.5rem; text-align:center">
     <button id="deleteAllBtn" class="danger btn-sm"
             style="font-size:0.76rem; opacity:0.65; width:100%">
@@ -1136,24 +1130,6 @@ async function deleteDoc(id) {
   refreshCorpus();
 }
 
-document.getElementById('stripMarkupBtn').addEventListener('click', async () => {
-  if (!confirm(
-    'Remove ==highlight== and #tag markers from stored document text?\n\n' +
-    'Annotations are already saved — this just cleans the raw text. Cannot be undone.'
-  )) return;
-  try {
-    const r = await fetch('/api/corpus/strip-markup', { method: 'POST' });
-    if (!r.ok) {
-      const body = await r.text();
-      let msg = `HTTP ${r.status}`;
-      try { msg = JSON.parse(body).error || msg; } catch { msg = body || msg; }
-      throw new Error(msg);
-    }
-    const { updated } = await r.json();
-    alert(updated === 0 ? 'All documents are already clean.' : `Cleaned ${updated} document${updated > 1 ? 's' : ''}.`);
-    if (updated > 0) refreshCorpus();
-  } catch (err) { alert('Failed: ' + err.message); }
-});
 
 document.getElementById('exportBtn').addEventListener('click', async () => {
   const r = await fetch('/api/documents');
