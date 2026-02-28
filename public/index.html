@@ -1248,7 +1248,7 @@ async function saveAnnotationEdit(annId) {
   const body = {};
   if (tag)     body.tag = tag.toLowerCase().replace(/\s+/g, '-');
   if (passage) body.source_passage = passage;
-  body.text = note || null;
+  if (note)    body.text = note;
 
   try {
     const r = await fetch('/api/annotations/' + annId, {
