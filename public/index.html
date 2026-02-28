@@ -584,8 +584,7 @@ document.getElementById('uploadForm').addEventListener('submit', async e => {
 // ── Corpus view ───────────────────────────────────────────────────────────────
 
 async function refreshCorpus() {
-  await loadDocuments();
-  await loadTagSummary();
+  await Promise.all([loadDocuments(), loadTagSummary()]);
 }
 
 async function loadDocuments() {
@@ -1026,10 +1025,13 @@ function showAnnotationToolbar(selRect, selectedText) {
             style="background:none; border:none; color:#ccc; cursor:pointer;
                    font-size:1.1rem; line-height:1; padding:0 0.1rem">✕</button>`;
 
+  // Insert hidden to measure actual dimensions, then position
+  toolbar.style.visibility = 'hidden';
   document.body.appendChild(toolbar);
+  const { width: tw, height: th } = toolbar.getBoundingClientRect();
+  toolbar.style.visibility = '';
 
   // Position: above the selection, centred, clamped to viewport
-  const tw = 550, th = 44;
   let top  = selRect.top  - th - 8;
   let left = selRect.left + selRect.width / 2 - tw / 2;
   if (top < 8) top = selRect.bottom + 8;

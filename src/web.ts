@@ -213,6 +213,17 @@ app.get('/api/activity', (_req, res: any) => {
 // Append-only: no PUT. Corrections create a new row with corrects_id.
 // ---------------------------------------------------------------------------
 
+/** Adds `tag` to the document's tags array if not already present (additive only). */
+function propagateTagToDocument(db: ReturnType<typeof getDB>, docId: unknown, tag: string, now: number) {
+  const doc = db.prepare('SELECT tags FROM corpus_documents WHERE id = ?').get(docId) as { tags: string } | undefined;
+  if (!doc) return;
+  const tags: string[] = JSON.parse(doc.tags || '[]');
+  if (!tags.includes(tag)) {
+    tags.push(tag);
+    db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, docId);
+  }
+}
+
 app.get('/api/documents/:id/annotations', (req: any, res: any) => {
   try {
     const db = getDB();
@@ -248,17 +259,7 @@ app.post('/api/documents/:id/annotations', (req: any, res: any) => {
         source_passage ?? null, start_offset ?? null, end_offset ?? null, now,
       );
 
-      // Propagate new tag to document (additive only)
-      if (tag) {
-        const doc = db.prepare('SELECT tags FROM corpus_documents WHERE id = ?').get(req.params.id) as { tags: string } | undefined;
-        if (doc) {
-          const tags: string[] = JSON.parse(doc.tags || '[]');
-          if (!tags.includes(tag)) {
-            tags.push(tag);
-            db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, req.params.id);
-          }
-        }
-      }
+      if (tag) propagateTagToDocument(db, req.params.id, tag, now);
       pushAnnotationsBackground();
       res.json({ id, status: 'created' });
     } finally { db.close(); }
@@ -358,17 +359,7 @@ app.patch('/api/annotations/:id/review', (req: any, res: any) => {
           VALUES (?, ?, ?, ?, 'human', 'researcher', ?, 'accepted', 1, NULL, ?)
         `).run(newId, ann.document_id, correction, finalTag, req.params.id, now);
 
-        // Propagate tag to document (additive only)
-        if (finalTag) {
-          const doc = db.prepare('SELECT tags FROM corpus_documents WHERE id = ?').get(ann.document_id) as { tags: string } | undefined;
-          if (doc) {
-            const tags: string[] = JSON.parse(doc.tags || '[]');
-            if (!tags.includes(finalTag)) {
-              tags.push(finalTag);
-              db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, ann.document_id);
-            }
-          }
-        }
+        if (finalTag) propagateTagToDocument(db, ann.document_id, finalTag, now);
 
         db.prepare('UPDATE corpus_annotations SET review_status = ? WHERE id = ?').run('accepted', req.params.id);
         pushAnnotationsBackground();
