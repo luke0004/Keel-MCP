@@ -61,6 +61,44 @@ Open **http://localhost:3000** in your browser. The app is running.
 
 ---
 
+## Getting updates
+
+When new features are available, you can update Keel in a few steps. Your documents and annotations are stored separately in `keel.db` and will not be affected.
+
+**1. Stop the app** if it is running — go to the Terminal window where it is running and press `Ctrl + C`.
+
+**2. Open Terminal and navigate to the Keel folder:**
+
+```
+cd Keel-MCP
+```
+
+**3. Download the latest version:**
+
+```
+git pull
+```
+
+You should see a list of files that were updated. If it says `Already up to date.`, you already have the latest version — nothing else to do.
+
+**4. Install any new dependencies** (only needed if the update added new components — safe to run every time):
+
+```
+npm install
+```
+
+**5. Start the app again:**
+
+```
+npm run web
+```
+
+Then open **http://localhost:3000** as usual. The new features will be available straight away.
+
+> **Your data is safe.** `git pull` only updates the app's code, not your database. All your uploaded documents, tags, and annotations stay exactly as they were.
+
+---
+
 ## Uploading documents
 
 Keel accepts `.md` (Markdown) and `.txt` (plain text) files.
