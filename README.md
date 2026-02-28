@@ -225,3 +225,9 @@ The backend is a TypeScript / Express / SQLite stack with no external services r
 - OpenAI-compatible REST API: `GET /api/tools` · `POST /api/tools/call`
 
 See [`roadmap.md`](roadmap.md) for the full feature roadmap and architectural plans.
+
+---
+
+## License
+
+All rights reserved.
