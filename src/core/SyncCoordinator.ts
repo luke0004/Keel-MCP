@@ -201,7 +201,7 @@ export class SyncCoordinator {
       if (this.schema.jsonFields.includes(field)) {
          val = val !== undefined ? JSON.stringify(val) : null;
       }
-      row[field] = val ?? null;
+      row[field] = val ?? (this.schema.nullDefaults?.[field] ?? null);
     }
     return row;
   }

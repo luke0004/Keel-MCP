@@ -45,6 +45,7 @@ export const AnnotationSchema: SyncSchema = {
            "source_passage", "start_offset", "end_offset"],
   jsonFields: [],
   unionSetFields: [],
+  nullDefaults: { text: '' },  // Supabase corpus_annotations.text is NOT NULL
   columnDefs: {
     document_id:    "TEXT NOT NULL",
     text:           "TEXT",

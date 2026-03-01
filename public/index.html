@@ -2428,21 +2428,22 @@ function parseBoolFilter(expr) {
 
 function applyBoolFilter(docs, terms) {
   if (!terms || !terms.length) return docs;
+  const hasTag = (doc, tag) => parseTags(doc.tags).some(t => t.toLowerCase() === tag);
   const byId = new Map(docs.map(d => [d.id, d]));
   let result = new Set(
-    docs.filter(doc => parseTags(doc.tags).includes(terms[0].tag)).map(d => d.id)
+    docs.filter(doc => hasTag(doc, terms[0].tag)).map(d => d.id)
   );
   for (let i = 1; i < terms.length; i++) {
     const { op, tag } = terms[i];
     if (op === 'AND') {
       for (const id of [...result]) {
         const doc = byId.get(id);
-        if (!doc || !parseTags(doc.tags).includes(tag)) result.delete(id);
+        if (!doc || !hasTag(doc, tag)) result.delete(id);
       }
     } else if (op === 'OR') {
-      docs.filter(d => parseTags(d.tags).includes(tag)).forEach(d => result.add(d.id));
+      docs.filter(d => hasTag(d, tag)).forEach(d => result.add(d.id));
     } else if (op === 'NOT') {
-      docs.filter(d => parseTags(d.tags).includes(tag)).forEach(d => result.delete(d.id));
+      docs.filter(d => hasTag(d, tag)).forEach(d => result.delete(d.id));
     }
   }
   return docs.filter(d => result.has(d.id));

@@ -22,6 +22,12 @@ export interface SyncSchema {
   /** Optional name of the deleted_at column if soft deletes are supported */
   deletedAtColumn?: string;
   /**
+   * Default values to use when a field is null before pushing to remote.
+   * Use for fields that are NOT NULL in the remote schema but nullable locally.
+   * E.g. { text: '' } to push empty string instead of null for the text field.
+   */
+  nullDefaults?: Record<string, unknown>;
+  /**
    * Key used to store this schema's sync token in the sync_state table.
    * Defaults to "last_token". Must be unique per schema when syncing
    * multiple schemas against the same DB so their pull positions don't collide.
