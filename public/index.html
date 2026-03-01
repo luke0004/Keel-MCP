@@ -468,6 +468,21 @@
     .freq-mode-btn.active { background: #5c6bc0; color: white; }
     .freq-mode-btn:hover:not(.active) { background: #eef0fb; color: #3f51b5; }
 
+    /* ── Frequency chip selector ── */
+    .freq-chip {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.22rem 0.5rem; border-radius: 20px;
+      border: 2px solid #e8eaf6; cursor: pointer;
+      font-size: 0.79rem; color: #666; background: #f9f9fb;
+      transition: background .12s, border-color .12s; user-select: none;
+    }
+    .freq-chip.selected {
+      border-color: var(--chip-color, #7986cb);
+      background: color-mix(in srgb, var(--chip-color, #7986cb) 12%, white);
+      color: var(--chip-color, #7986cb); font-weight: 600;
+    }
+    .freq-chip:hover:not(.selected) { border-color: #9fa8da; }
+
     /* ── KWIC concordance ── */
     .kwic-row {
       display: flex; border-bottom: 1px solid #f5f5f5;
@@ -730,25 +745,22 @@
 
     <!-- Term frequency over time -->
     <div id="anaPanelFreq" style="display:none; flex-direction:column; flex:1; min-height:0">
-      <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem; flex-shrink:0; align-items:center">
+      <div style="display:flex; gap:0.4rem; margin-bottom:0.35rem; flex-shrink:0; align-items:center">
         <div style="display:flex; border:1px solid #dde1ea; border-radius:6px; overflow:hidden; flex-shrink:0">
           <button id="freqModeTermBtn" class="freq-mode-btn active" onclick="setFreqMode('term')">Term</button>
           <button id="freqModeTagBtn"  class="freq-mode-btn"        onclick="setFreqMode('tag')">#Tag</button>
           <button id="freqModeCatBtn"  class="freq-mode-btn"        onclick="setFreqMode('category')">Category</button>
         </div>
-        <input id="freqInput" type="text" placeholder="Term to plot over time…" style="flex:1">
-        <select id="freqCatSelect" style="display:none; flex:1; padding:0.44rem 0.55rem;
-                border:1px solid #dde1ea; border-radius:6px; font-size:0.88rem;
-                font-family:inherit; color:#1a1a2e; background:#fafbff">
-          <option value="">— pick a category —</option>
-        </select>
+        <input id="freqInput" type="text" placeholder="Term(s) to plot, comma-separated…" style="flex:1">
         <button id="freqClearBtn" title="Clear"
                 style="background:none; border:none; color:#ccc; cursor:pointer;
                        font-size:1.05rem; padding:0 0.1rem; line-height:1">×</button>
         <button id="freqBtn" class="btn-sm">Plot</button>
       </div>
+      <div id="freqChipArea" style="display:none; flex-wrap:wrap; gap:0.35rem; max-height:110px;
+           overflow-y:auto; padding:0.3rem 0 0.45rem; flex-shrink:0"></div>
       <div id="freqResults" style="flex:1; overflow-y:auto; min-height:0">
-        <span style="color:#ccc; font-size:0.83rem">Enter a term or tag to plot its frequency per decade.</span>
+        <span style="color:#ccc; font-size:0.83rem">Enter a term or select tags/categories to plot frequency per decade.</span>
       </div>
     </div>
 
@@ -2280,35 +2292,83 @@ async function runCollocates() {
 
 // ── Term frequency over time ───────────────────────────────────────────────────
 
-let freqMode = 'term'; // 'term' | 'tag' | 'category'
+let freqMode         = 'term'; // 'term' | 'tag' | 'category'
+let freqSelectedTags   = [];   // tag name strings selected in #Tag mode
+let freqSelectedCatIds = [];   // category id strings selected in Category mode
+
+const FREQ_PALETTE = [
+  '#7986cb','#ef9a9a','#80cbc4','#ffb74d','#a5d6a7',
+  '#90caf9','#ce93d8','#f48fb1','#81d4fa','#bcaaa4'
+];
 
 function setFreqMode(mode) {
   freqMode = mode;
   document.getElementById('freqModeTermBtn').classList.toggle('active', mode === 'term');
   document.getElementById('freqModeTagBtn').classList.toggle('active',  mode === 'tag');
   document.getElementById('freqModeCatBtn').classList.toggle('active',  mode === 'category');
-  const isCat = mode === 'category';
-  document.getElementById('freqInput').style.display     = isCat ? 'none' : '';
-  document.getElementById('freqCatSelect').style.display = isCat ? '' : 'none';
-  if (isCat) {
-    const sel = document.getElementById('freqCatSelect');
-    sel.innerHTML = '<option value="">— pick a category —</option>' +
-      categoriesData.map(c =>
-        `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`
-      ).join('');
+  const isTerm = mode === 'term';
+  document.getElementById('freqInput').style.display    = isTerm ? '' : 'none';
+  const chipArea = document.getElementById('freqChipArea');
+  chipArea.style.display = isTerm ? 'none' : 'flex';
+  if (!isTerm) renderFreqChips();
+}
+
+function renderFreqChips() {
+  const chipArea = document.getElementById('freqChipArea');
+  if (freqMode === 'tag') {
+    const allTags = window._lastTagSummary || [];
+    chipArea.innerHTML = allTags.map((t, i) => {
+      const selIdx = freqSelectedTags.indexOf(t.tag);
+      const isSelected = selIdx !== -1;
+      const color = isSelected ? FREQ_PALETTE[selIdx % FREQ_PALETTE.length] : '#7986cb';
+      return `<span class="freq-chip${isSelected ? ' selected' : ''}"
+                    data-tag="${escapeHtml(t.tag)}"
+                    style="--chip-color:${color}">${escapeHtml(t.tag)}</span>`;
+    }).join('');
   } else {
-    document.getElementById('freqInput').placeholder =
-      mode === 'tag' ? 'Tag name to plot over time…' : 'Term to plot over time…';
+    chipArea.innerHTML = categoriesData.map(c => {
+      const isSelected = freqSelectedCatIds.includes(String(c.id));
+      return `<span class="freq-chip${isSelected ? ' selected' : ''}"
+                    data-cat-id="${escapeHtml(String(c.id))}"
+                    style="--chip-color:${escapeHtml(c.color || '#7986cb')}">
+                <span style="color:${escapeHtml(c.color || '#7986cb')}; font-size:0.75rem">●</span>
+                ${escapeHtml(c.name)}
+              </span>`;
+    }).join('');
   }
 }
 
+function toggleFreqTag(tag) {
+  const idx = freqSelectedTags.indexOf(tag);
+  if (idx === -1) freqSelectedTags.push(tag);
+  else freqSelectedTags.splice(idx, 1);
+  renderFreqChips();
+}
+
+function toggleFreqCat(catId) {
+  const id = String(catId);
+  const idx = freqSelectedCatIds.indexOf(id);
+  if (idx === -1) freqSelectedCatIds.push(id);
+  else freqSelectedCatIds.splice(idx, 1);
+  renderFreqChips();
+}
+
+document.getElementById('freqChipArea').addEventListener('click', e => {
+  const chip = e.target.closest('.freq-chip');
+  if (!chip) return;
+  if (chip.dataset.tag)   toggleFreqTag(chip.dataset.tag);
+  if (chip.dataset.catId) toggleFreqCat(chip.dataset.catId);
+});
+
 document.getElementById('freqBtn').addEventListener('click', runTermFreq);
 document.getElementById('freqClearBtn').addEventListener('click', () => {
+  freqSelectedTags   = [];
+  freqSelectedCatIds = [];
   document.getElementById('freqInput').value = '';
-  document.getElementById('freqCatSelect').value = '';
+  renderFreqChips();
   document.getElementById('freqResults').innerHTML =
-    '<span style="color:#ccc; font-size:0.83rem">Enter a term, tag, or category to plot its frequency per decade.</span>';
-  if (freqMode !== 'category') document.getElementById('freqInput').focus();
+    '<span style="color:#ccc; font-size:0.83rem">Enter a term or select tags/categories to plot frequency per decade.</span>';
+  if (freqMode === 'term') document.getElementById('freqInput').focus();
 });
 document.getElementById('freqInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runTermFreq();
@@ -2317,88 +2377,137 @@ document.getElementById('freqInput').addEventListener('keydown', e => {
 
 async function runTermFreq() {
   const results = document.getElementById('freqResults');
-  let url, label;
-
-  if (freqMode === 'category') {
-    const sel   = document.getElementById('freqCatSelect');
-    const catId = sel.value;
-    if (!catId) return;
-    const cat = categoriesData.find(c => c.id === catId);
-    if (!cat) return;
-    if (!cat.tags.length) {
-      results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">This category has no tags.</span>';
-      return;
-    }
-    const tagsParam = cat.tags.map(encodeURIComponent).join(',');
-    url   = `/api/analysis/termfreq?q=${encodeURIComponent(cat.name)}&mode=category&tags=${tagsParam}`;
-    label = `category: ${escapeHtml(cat.name)}`;
-  } else {
-    const term = document.getElementById('freqInput').value.trim();
-    if (!term) return;
-    url   = `/api/analysis/termfreq?q=${encodeURIComponent(term)}&mode=${freqMode}`;
-    label = null; // built below from term + mode
-  }
-
   results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Loading…</span>';
+
   try {
-    const data = await fetch(url).then(r => r.json());
-    if (!data.length) {
+    let seriesData;  // Array of { data, label, color }
+
+    if (freqMode === 'term') {
+      const terms = document.getElementById('freqInput').value
+        .split(',').map(t => t.trim()).filter(Boolean);
+      if (!terms.length) { results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Enter at least one term.</span>'; return; }
+      const fetches = await Promise.all(
+        terms.map(t => fetch(`/api/analysis/termfreq?q=${encodeURIComponent(t)}&mode=term`).then(r => r.json()))
+      );
+      seriesData = terms.map((t, i) => ({ data: fetches[i], label: t, color: FREQ_PALETTE[i % FREQ_PALETTE.length], mode: 'term' }));
+
+    } else if (freqMode === 'tag') {
+      if (!freqSelectedTags.length) {
+        results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Select at least one tag chip above, then click Plot.</span>';
+        return;
+      }
+      const fetches = await Promise.all(
+        freqSelectedTags.map(tag => fetch(`/api/analysis/termfreq?q=${encodeURIComponent(tag)}&mode=tag`).then(r => r.json()))
+      );
+      seriesData = freqSelectedTags.map((tag, i) => ({
+        data: fetches[i], label: '#' + tag,
+        color: FREQ_PALETTE[i % FREQ_PALETTE.length], mode: 'tag'
+      }));
+
+    } else {
+      // category mode
+      const cats = freqSelectedCatIds
+        .map(id => categoriesData.find(c => String(c.id) === id))
+        .filter(Boolean);
+      if (!cats.length) {
+        results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Select at least one category chip above, then click Plot.</span>';
+        return;
+      }
+      const emptyCats = cats.filter(c => !c.tags.length);
+      if (emptyCats.length === cats.length) {
+        results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Selected categories have no tags.</span>';
+        return;
+      }
+      const fetches = await Promise.all(
+        cats.map(cat => {
+          const tagsParam = cat.tags.map(encodeURIComponent).join(',');
+          return fetch(`/api/analysis/termfreq?q=${encodeURIComponent(cat.name)}&mode=category&tags=${tagsParam}`).then(r => r.json());
+        })
+      );
+      seriesData = cats.map((cat, i) => ({
+        data: fetches[i], label: cat.name,
+        color: cat.color || FREQ_PALETTE[i % FREQ_PALETTE.length], mode: 'category'
+      }));
+    }
+
+    // Filter out fully-empty series
+    seriesData = seriesData.filter(s => s.data.length > 0);
+    if (!seriesData.length) {
       results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No dated documents in corpus.</span>';
       return;
     }
 
-    const term    = freqMode !== 'category' ? document.getElementById('freqInput').value.trim() : '';
-    const barCol  = freqMode === 'category' ? '#80cbc4' : freqMode === 'tag' ? '#81a1c1' : '#7986cb';
-    const textCol = freqMode === 'category' ? '#4db6ac' : freqMode === 'tag' ? '#5e81ac' : '#7986cb';
-    const maxOcc  = Math.max(...data.map(d => d.occurrences), 1);
-    const total   = data.reduce((s, d) => s + d.occurrences, 0);
-    const docHits = data.reduce((s, d) => s + d.doc_count, 0);
+    // Align all series to a common bucket list
+    const allBuckets = [...new Set(seriesData.flatMap(s => s.data.map(d => d.bucket)))]
+      .sort((a, b) => parseInt(a) - parseInt(b));
 
-    const W = 600, H = 190, padL = 32, padR = 10, padT = 14, padB = 50;
+    const aligned = seriesData.map(s => {
+      const map = new Map(s.data.map(d => [d.bucket, d]));
+      return allBuckets.map(b => map.get(b) ?? { bucket: b, occurrences: 0, doc_count: 0, total_docs: 0 });
+    });
+
+    const N = seriesData.length;
+    const M = allBuckets.length;
+    const globalMaxOcc = Math.max(...aligned.flat().map(d => d.occurrences), 1);
+
+    // SVG layout
+    const W = 600, H = 200, padL = 32, padR = 10, padT = 14, padB = 52;
     const plotW = W - padL - padR;
     const plotH = H - padT - padB;
-    const n     = data.length;
-    const slot  = plotW / n;
-    const barW  = Math.min(36, slot * 0.72);
+    const slot  = plotW / M;
+    const seriesBarW = Math.min(32 / Math.max(N, 1), Math.max(3, (slot * 0.72 - 1.5 * (N - 1)) / N));
 
-    const bars = data.map((d, i) => {
+    const barsSvg = allBuckets.map((bucket, i) => {
       const cx     = padL + (i + 0.5) * slot;
-      const bh     = d.occurrences / maxOcc * plotH;
-      const x      = (cx - barW / 2).toFixed(1);
-      const y      = (padT + plotH - bh).toFixed(1);
-      const col    = d.occurrences > 0 ? barCol : '#eef0f5';
       const labelY = (padT + plotH + 13).toFixed(1);
-      return `
-        <rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${Math.max(1, bh).toFixed(1)}"
-              fill="${col}" rx="2"/>
-        ${d.occurrences > 0
-          ? `<text x="${cx.toFixed(1)}" y="${(padT + plotH - bh - 4).toFixed(1)}"
-                   text-anchor="middle" font-size="8" fill="${textCol}">${d.occurrences}</text>`
-          : ''}
-        <text x="${cx.toFixed(1)}" y="${labelY}"
-              text-anchor="end" font-size="9" fill="#bbb"
-              transform="rotate(-45,${cx.toFixed(1)},${labelY})">${d.bucket}</text>`;
+      const label  = `<text x="${cx.toFixed(1)}" y="${labelY}"
+                            text-anchor="end" font-size="9" fill="#bbb"
+                            transform="rotate(-45,${cx.toFixed(1)},${labelY})">${bucket}</text>`;
+      const bars = seriesData.map((s, j) => {
+        const d      = aligned[j][i];
+        const offset = (j - (N - 1) / 2) * (seriesBarW + 1.5);
+        const barX   = (cx + offset - seriesBarW / 2).toFixed(1);
+        const bh     = d.occurrences / globalMaxOcc * plotH;
+        const y      = (padT + plotH - bh).toFixed(1);
+        const col    = d.occurrences > 0 ? s.color : '#eef0f5';
+        return `<rect x="${barX}" y="${y}" width="${seriesBarW.toFixed(1)}" height="${Math.max(1, bh).toFixed(1)}"
+                      fill="${col}" rx="2"/>
+                ${d.occurrences > 0 && seriesBarW > 10
+                  ? `<text x="${(cx + offset).toFixed(1)}" y="${(padT + plotH - bh - 3).toFixed(1)}"
+                           text-anchor="middle" font-size="7" fill="${s.color}">${d.occurrences}</text>`
+                  : ''}`;
+      }).join('');
+      return label + bars;
     }).join('');
 
     const axisY = padT + plotH;
-    if (!label) {
-      label = freqMode === 'tag'
-        ? `#${escapeHtml(term)} · ${total} document${total !== 1 ? 's' : ''} tagged`
-        : `<em>${escapeHtml(term)}</em> · ${total} occurrence${total !== 1 ? 's' : ''} in ${docHits} document${docHits !== 1 ? 's' : ''}`;
-    } else {
-      label = `${label} · ${total} document${total !== 1 ? 's' : ''} matched`;
-    }
-    const barDesc = freqMode === 'term' ? 'occurrence count per decade' : 'documents matched per decade';
+
+    // Legend
+    const legendItems = seriesData.map((s, j) => {
+      const total   = aligned[j].reduce((acc, d) => acc + d.occurrences, 0);
+      const docHits = aligned[j].reduce((acc, d) => acc + d.doc_count, 0);
+      const detail  = s.mode === 'term'
+        ? `${total} occ. in ${docHits} doc${docHits !== 1 ? 's' : ''}`
+        : `${total} doc${total !== 1 ? 's' : ''} matched`;
+      return `<span style="display:inline-flex; align-items:center; gap:0.3rem; margin-right:0.9rem; font-size:0.72rem; color:#666">
+                <span style="width:10px; height:10px; border-radius:2px; background:${s.color}; flex-shrink:0; display:inline-block"></span>
+                <strong style="color:${s.color}">${escapeHtml(s.label)}</strong>
+                <span style="color:#bbb">${detail}</span>
+              </span>`;
+    }).join('');
+
+    const barDesc = freqMode === 'term' ? 'bar height = occurrence count per decade'
+                                        : 'bar height = documents matched per decade';
     results.innerHTML = `
-      <div style="font-size:0.72rem; color:#bbb; margin-bottom:0.4rem">${label}</div>
       <svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible; display:block">
         <line x1="${padL}" y1="${axisY}" x2="${W - padR}" y2="${axisY}"
               stroke="#dde1ea" stroke-width="1"/>
-        ${bars}
+        ${barsSvg}
       </svg>
-      <div style="font-size:0.71rem; color:#bbb; margin-top:0.2rem; padding-left:${padL}px">
-        bar height = ${barDesc}
-      </div>`;
+      <div style="display:flex; flex-wrap:wrap; margin-top:0.45rem; padding-left:${padL}px">
+        ${legendItems}
+      </div>
+      <div style="font-size:0.71rem; color:#bbb; margin-top:0.3rem; padding-left:${padL}px">${barDesc}</div>`;
   } catch (err) {
     results.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
   }
