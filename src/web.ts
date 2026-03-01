@@ -345,7 +345,7 @@ app.patch('/api/annotations/:id', (req: any, res: any) => {
       const params: unknown[] = [];
       const now = Date.now();
       if (tag !== undefined) { updates.push('tag = ?'); params.push(tag); }
-      if (text !== undefined && text !== null) { updates.push('text = ?'); params.push(text); }
+      if (text !== undefined) { updates.push('text = ?'); params.push(text || null); }
       if (source_passage !== undefined && source_passage !== null) { updates.push('source_passage = ?'); params.push(source_passage); }
 
       if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
