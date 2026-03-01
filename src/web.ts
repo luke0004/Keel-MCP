@@ -1388,8 +1388,8 @@ const GERMAN_STOPWORDS = new Set([
 
 app.get('/api/analysis/termfreq', (req: any, res: any) => {
   const term = String(req.query.q ?? '').trim();
-  const mode = String(req.query.mode ?? 'term'); // 'term' | 'tag'
-  if (!term) return res.json([]);
+  const mode = String(req.query.mode ?? 'term'); // 'term' | 'tag' | 'category'
+  if (mode !== 'category' && !term) return res.json([]);
   try {
     const db = getDB();
     try {
@@ -1420,6 +1420,25 @@ app.get('/api/analysis/termfreq', (req: any, res: any) => {
           let tags: string[] = [];
           try { tags = JSON.parse(doc.tags || '[]'); } catch { /* */ }
           if (tags.some(t => t.toLowerCase() === tagLower)) { b.occurrences++; b.doc_count++; }
+        }
+      } else if (mode === 'category') {
+        // Count documents per decade that carry any tag from the category
+        const tagList = String(req.query.tags ?? '').split(',')
+          .map((t: string) => t.trim().toLowerCase()).filter(Boolean);
+        if (!tagList.length) return res.json([]);
+        const docs = db.prepare(`
+          SELECT publication_date, tags FROM corpus_documents
+          WHERE publication_date IS NOT NULL AND publication_date != ''
+        `).all() as { publication_date: string; tags: string }[];
+
+        for (const doc of docs) {
+          const key = decadeKey(doc.publication_date);
+          if (!key) continue;
+          const b = ensureBucket(key);
+          b.total_docs++;
+          let docTags: string[] = [];
+          try { docTags = JSON.parse(doc.tags || '[]'); } catch { /* */ }
+          if (docTags.some(t => tagList.includes(t.toLowerCase()))) { b.occurrences++; b.doc_count++; }
         }
       } else {
         // Count text occurrences per decade across document content
