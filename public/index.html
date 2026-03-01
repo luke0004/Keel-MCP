@@ -2327,10 +2327,12 @@ function renderFreqChips() {
     }).join('');
   } else {
     chipArea.innerHTML = categoriesData.map(c => {
-      const isSelected = freqSelectedCatIds.includes(String(c.id));
+      const selIdx = freqSelectedCatIds.indexOf(String(c.id));
+      const isSelected = selIdx !== -1;
+      const chipColor = isSelected ? FREQ_PALETTE[selIdx % FREQ_PALETTE.length] : (c.color || '#7986cb');
       return `<span class="freq-chip${isSelected ? ' selected' : ''}"
                     data-cat-id="${escapeHtml(String(c.id))}"
-                    style="--chip-color:${escapeHtml(c.color || '#7986cb')}">
+                    style="--chip-color:${chipColor}">
                 <span style="color:${escapeHtml(c.color || '#7986cb')}; font-size:0.75rem">●</span>
                 ${escapeHtml(c.name)}
               </span>`;
@@ -2426,7 +2428,8 @@ async function runTermFreq() {
       );
       seriesData = cats.map((cat, i) => ({
         data: fetches[i], label: cat.name,
-        color: cat.color || FREQ_PALETTE[i % FREQ_PALETTE.length], mode: 'category'
+        color: FREQ_PALETTE[i % FREQ_PALETTE.length], mode: 'category',
+        dotColor: cat.color || FREQ_PALETTE[i % FREQ_PALETTE.length],
       }));
     }
 
@@ -2489,8 +2492,11 @@ async function runTermFreq() {
       const detail  = s.mode === 'term'
         ? `${total} occ. in ${docHits} doc${docHits !== 1 ? 's' : ''}`
         : `${total} doc${total !== 1 ? 's' : ''} matched`;
+      const dot = s.dotColor
+        ? `<span style="color:${s.dotColor}; font-size:0.75rem; line-height:1">●</span>`
+        : `<span style="width:10px; height:10px; border-radius:2px; background:${s.color}; flex-shrink:0; display:inline-block"></span>`;
       return `<span style="display:inline-flex; align-items:center; gap:0.3rem; margin-right:0.9rem; font-size:0.72rem; color:#666">
-                <span style="width:10px; height:10px; border-radius:2px; background:${s.color}; flex-shrink:0; display:inline-block"></span>
+                ${dot}
                 <strong style="color:${s.color}">${escapeHtml(s.label)}</strong>
                 <span style="color:#bbb">${detail}</span>
               </span>`;
