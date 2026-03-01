@@ -1022,6 +1022,67 @@ app.get('/api/tags/:tag/highlights', (req: any, res: any) => {
   }
 });
 
+// PATCH /api/tags/:tag  { newTag: string }
+// Rename a tag corpus-wide: updates doc.tags arrays and annotation.tag fields.
+app.patch('/api/tags/:tag', (req: any, res: any) => {
+  const oldTag = decodeURIComponent(req.params.tag);
+  const newTag = String(req.body?.newTag ?? '').trim().toLowerCase().replace(/\s+/g, '-');
+  if (!newTag) return res.status(400).json({ error: 'newTag is required' });
+  if (newTag === oldTag) return res.json({ updated_docs: 0, updated_annotations: 0 });
+  try {
+    const db = getDB();
+    try {
+      // Rename in all doc.tags arrays
+      const docs = db.prepare('SELECT id, tags FROM corpus_documents').all() as { id: string; tags: string }[];
+      let updatedDocs = 0;
+      for (const doc of docs) {
+        let arr: string[] = [];
+        try { arr = JSON.parse(doc.tags || '[]'); } catch { continue; }
+        if (!arr.includes(oldTag)) continue;
+        const next = arr.map(t => t === oldTag ? newTag : t);
+        db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(next), Date.now(), doc.id);
+        updatedDocs++;
+      }
+      // Rename in annotations
+      const annResult = db.prepare(
+        "UPDATE corpus_annotations SET tag = ?, is_dirty = 1, updated_at = ? WHERE tag = ?"
+      ).run(newTag, Date.now(), oldTag) as { changes: number };
+      res.json({ updated_docs: updatedDocs, updated_annotations: annResult.changes });
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// DELETE /api/tags/:tag
+// Remove a tag corpus-wide: strips from doc.tags arrays and nulls annotation.tag fields.
+app.delete('/api/tags/:tag', (req: any, res: any) => {
+  const tag = decodeURIComponent(req.params.tag);
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare('SELECT id, tags FROM corpus_documents').all() as { id: string; tags: string }[];
+      let updatedDocs = 0;
+      for (const doc of docs) {
+        let arr: string[] = [];
+        try { arr = JSON.parse(doc.tags || '[]'); } catch { continue; }
+        if (!arr.includes(tag)) continue;
+        const next = arr.filter(t => t !== tag);
+        db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(next), Date.now(), doc.id);
+        updatedDocs++;
+      }
+      const annResult = db.prepare(
+        "UPDATE corpus_annotations SET tag = NULL, is_dirty = 1, updated_at = ? WHERE tag = ?"
+      ).run(Date.now(), tag) as { changes: number };
+      res.json({ updated_docs: updatedDocs, updated_annotations: annResult.changes });
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Analysis endpoints — Phase 4 research tools
 // ---------------------------------------------------------------------------

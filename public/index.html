@@ -308,6 +308,19 @@
                      overflow: hidden; min-width: 0; }
     .tag-bar-fill { height: 100%; background: #7986cb; border-radius: 3px; }
     .tag-bar-count { font-size: 0.72rem; color: #bbb; white-space: nowrap; flex: 0 0 auto; }
+    .tag-bar-actions { display:flex; gap:0.15rem; margin-left:0.3rem; opacity:0; transition:opacity .15s; flex-shrink:0; }
+    .tag-bar:hover .tag-bar-actions { opacity:1; }
+    .tag-bar-actions button { background:none; border:none; cursor:pointer; font-size:0.72rem;
+                               color:#aaa; padding:0 0.2rem; line-height:1.5; border-radius:3px; }
+    .tag-bar-actions button:hover { color:#555; background:#e8eaf0; }
+    .tag-editor-row { display:flex; align-items:center; gap:0.3rem; padding:0.18rem 0.4rem;
+                      margin-bottom:0.18rem; }
+    .tag-editor-input { flex:1; font-size:0.82rem; padding:0.2rem 0.4rem; border:1px solid #7986cb;
+                        border-radius:4px; font-family:inherit; min-width:0; }
+    .tag-editor-btn { background:none; border:none; cursor:pointer; font-size:0.8rem;
+                      padding:0.1rem 0.3rem; border-radius:3px; }
+    .tag-editor-btn.save { color:#388e3c; } .tag-editor-btn.save:hover { background:#e8f5e9; }
+    .tag-editor-btn.cancel { color:#aaa; } .tag-editor-btn.cancel:hover { background:#f5f5f5; }
 
     /* ── Inline markup (==highlight== and #tag in viewer) ── */
     mark.inline-hl { background: #fff9c4; border-radius: 2px; padding: 0 2px; }
@@ -1130,6 +1143,10 @@ async function loadTagSummary() {
           <span class="tag-bar-label">#${escapeHtml(t.tag)}</span>
           <div class="tag-bar-track"><div class="tag-bar-fill" style="width:${pct}%"></div></div>
           <span class="tag-bar-count">${countLabel}</span>
+          <div class="tag-bar-actions">
+            <button class="tag-edit-btn" data-edit-tag="${escapeHtml(t.tag)}" title="Rename tag">✎</button>
+            <button class="tag-delete-btn" data-delete-tag="${escapeHtml(t.tag)}" title="Delete tag">🗑</button>
+          </div>
         </div>`;
     }).join('');
   } catch {
@@ -1137,10 +1154,87 @@ async function loadTagSummary() {
   }
 }
 
-document.getElementById('tagList').addEventListener('click', e => {
+document.getElementById('tagList').addEventListener('click', async e => {
+  // Edit button — replace tag bar with inline input form
+  const editBtn = e.target.closest('.tag-edit-btn');
+  if (editBtn) { e.stopPropagation(); startTagEdit(editBtn.dataset.editTag); return; }
+
+  // Delete button — remove tag corpus-wide after confirm
+  const delBtn = e.target.closest('.tag-delete-btn');
+  if (delBtn) {
+    e.stopPropagation();
+    const tag = delBtn.dataset.deleteTag;
+    if (!confirm(`Delete tag #${tag} from all documents and annotations?\nThis cannot be undone.`)) return;
+    await deleteTagCorpusWide(tag);
+    return;
+  }
+
+  // Save rename
+  const saveBtn = e.target.closest('.tag-editor-save');
+  if (saveBtn) {
+    e.stopPropagation();
+    const oldTag  = saveBtn.dataset.oldTag;
+    const input   = document.getElementById('tag-editor-input-' + oldTag);
+    const newTag  = input?.value.trim().toLowerCase().replace(/\s+/g, '-') ?? '';
+    if (!newTag) { if (input) { input.style.borderColor = '#e53935'; input.focus(); } return; }
+    await saveTagRename(oldTag, newTag);
+    return;
+  }
+
+  // Cancel edit — restore original tag bar
+  const cancelBtn = e.target.closest('.tag-editor-cancel');
+  if (cancelBtn) { e.stopPropagation(); loadTagSummary(); return; }
+
+  // Browse by tag (click on bar, not action buttons)
   const bar = e.target.closest('[data-browse-tag]');
-  if (bar) browseTag(bar.dataset.browseTag);
+  if (bar && !e.target.closest('.tag-bar-actions')) browseTag(bar.dataset.browseTag);
 });
+
+function startTagEdit(tag) {
+  const bar = document.querySelector(`.tag-bar[data-browse-tag="${CSS.escape(tag)}"]`);
+  if (!bar) return;
+  bar.outerHTML = `
+    <div class="tag-editor-row" data-editing-tag="${escapeHtml(tag)}">
+      <input id="tag-editor-input-${escapeHtml(tag)}" class="tag-editor-input"
+             type="text" value="${escapeHtml(tag)}" placeholder="new tag name"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();
+               document.querySelector('.tag-editor-save[data-old-tag=\\'${escapeHtml(tag)}\\']')?.click();}
+               else if(event.key==='Escape'){document.querySelector('.tag-editor-cancel[data-old-tag=\\'${escapeHtml(tag)}\\']')?.click();}">
+      <button class="tag-editor-btn save tag-editor-save" data-old-tag="${escapeHtml(tag)}">✓</button>
+      <button class="tag-editor-btn cancel tag-editor-cancel" data-old-tag="${escapeHtml(tag)}">✕</button>
+    </div>`;
+  document.getElementById('tag-editor-input-' + tag)?.focus();
+  const input = document.getElementById('tag-editor-input-' + tag);
+  if (input) input.select();
+}
+
+async function saveTagRename(oldTag, newTag) {
+  try {
+    const r = await fetch('/api/tags/' + encodeURIComponent(oldTag), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newTag }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Rename failed');
+    if (activeTagFilter === oldTag) activeTagFilter = newTag;
+    await refreshCorpus();
+  } catch (err) {
+    alert('Could not rename tag: ' + err.message);
+    loadTagSummary();
+  }
+}
+
+async function deleteTagCorpusWide(tag) {
+  try {
+    const r = await fetch('/api/tags/' + encodeURIComponent(tag), { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Delete failed');
+    if (activeTagFilter === tag) { activeTagFilter = null; updateFilterBar(); }
+    await refreshCorpus();
+    if (currentDocId) viewDocument(currentDocId);
+  } catch (err) {
+    alert('Could not delete tag: ' + err.message);
+  }
+}
 
 function browseTag(tag) {
   activeTagFilter   = tag;
@@ -1527,8 +1621,7 @@ async function saveAnnotationEdit(annId) {
     });
     if (!r.ok) throw new Error((await r.json()).error || 'Update failed');
     await viewDocument(currentDocId);
-    loadTagSummary();
-    refreshCorpus();
+    await refreshCorpus();
   } catch (err) {
     alert('Could not update annotation: ' + err.message);
   }
