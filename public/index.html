@@ -319,21 +319,6 @@
     }
     .ann-hl:hover { filter: brightness(0.88); }
 
-    /* ── Floating annotation toolbar ── */
-    #ann-toolbar {
-      background: white;
-      border: 1px solid #dde1ea;
-      border-radius: 8px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.14);
-      padding: 0.45rem 0.7rem;
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      font-family: system-ui, -apple-system, sans-serif;
-    }
-    .ann-toolbar-label { font-size: 0.76rem; color: #888; white-space: nowrap; }
-
     /* ── Annotation list (below document body) ── */
     .ann-list {
       margin-top: 1.8rem;
@@ -502,6 +487,34 @@
                   gap:0.35rem; cursor:pointer; font-weight:normal">
       <input type="checkbox" id="annotationsOnlyToggle"> Annotations only
     </label>
+  </div>
+  <div id="pending-annotation" hidden style="flex-shrink:0; margin-bottom:0.5rem">
+    <div style="background:#f5f6ff; border:1px solid #c5cae9; border-radius:8px;
+                padding:0.55rem 0.8rem; display:flex; flex-direction:column; gap:0.35rem">
+      <div id="pending-ann-title"
+           style="font-size:0.72rem; font-weight:700; color:#5c6bc0;
+                  letter-spacing:0.04em; text-transform:uppercase">New annotation</div>
+      <div id="pending-passage-preview"
+           style="font-size:0.79rem; color:#555; font-style:italic;
+                  white-space:nowrap; overflow:hidden; text-overflow:ellipsis"></div>
+      <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap">
+        <input id="pending-tag" type="text" placeholder="tag (required)"
+               style="flex:1; min-width:70px; padding:0.22rem 0.45rem;
+                      border:1px solid #c5cae9; border-radius:5px;
+                      font-size:0.8rem; font-family:inherit">
+        <input id="pending-note" type="text" placeholder="note (optional)"
+               style="flex:2; min-width:100px; padding:0.22rem 0.45rem;
+                      border:1px solid #dde1ea; border-radius:5px;
+                      font-size:0.8rem; font-family:inherit">
+        <button id="pending-save"
+                style="background:#5c6bc0; color:white; border:none; border-radius:5px;
+                       padding:0.25rem 0.75rem; font-size:0.8rem; cursor:pointer;
+                       font-family:inherit">Annotate</button>
+        <button id="pending-cancel"
+                style="background:none; border:none; color:#bbb; cursor:pointer;
+                       font-size:1rem; padding:0 0.1rem; line-height:1">✕</button>
+      </div>
+    </div>
   </div>
   <div id="viewerContent">
     <p class="viewer-placeholder">Click a document title to read it here.</p>
@@ -1043,6 +1056,7 @@ function renderAnnotationList(anns) {
 
 async function viewDocument(docId) {
   currentDocId = docId;
+  hidePendingAnnotation();
   const panel  = document.getElementById('viewerContent');
   panel.innerHTML = '<span style="color:#ccc; font-size:0.88rem">Loading…</span>';
   try {
@@ -1080,105 +1094,70 @@ async function viewDocument(docId) {
   }
 }
 
-// ── Text-selection annotation toolbar ────────────────────────────────────────
+// ── Annotation create panel (inline, always in viewer column) ─────────────────
 
-let mouseDownOnToolbar = false;
+let pendingText = null;
 
-document.addEventListener('mousedown', e => {
-  mouseDownOnToolbar = !!e.target.closest('#ann-toolbar');
+document.getElementById('pending-save').addEventListener('click', async () => {
+  const tag  = document.getElementById('pending-tag').value.trim();
+  const note = document.getElementById('pending-note').value.trim();
+  if (!tag) {
+    document.getElementById('pending-tag').style.borderColor = '#e53935';
+    document.getElementById('pending-tag').focus();
+    return;
+  }
+  const text = pendingText;
+  hidePendingAnnotation();
+  window.getSelection()?.removeAllRanges();
+  await saveAnnotation(text, tag.toLowerCase().replace(/\s+/g, '-'), note);
 });
 
-document.getElementById('viewerContent').addEventListener('mouseup', (e) => {
-  if (mouseDownOnToolbar) return;
-  const mouseX = e.clientX;
-  const mouseY = e.clientY;
+document.getElementById('pending-cancel').addEventListener('click', () => {
+  hidePendingAnnotation();
+  window.getSelection()?.removeAllRanges();
+  if (reselectAnnId) cancelReselect();
+});
+
+for (const inputId of ['pending-tag', 'pending-note']) {
+  document.getElementById(inputId).addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); document.getElementById('pending-save').click(); }
+    if (e.key === 'Tab' && inputId === 'pending-tag')
+      { e.preventDefault(); document.getElementById('pending-note').focus(); }
+    if (e.key === 'Escape') { document.getElementById('pending-cancel').click(); }
+  });
+}
+
+document.getElementById('viewerContent').addEventListener('mouseup', () => {
   setTimeout(() => {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !currentDocId) { hideAnnotationToolbar(); return; }
+    if (!sel || sel.isCollapsed || !currentDocId) return;
     const text = sel.toString().trim();
-    if (text.length < 2) { hideAnnotationToolbar(); return; }
+    if (text.length < 2) return;
     const range = sel.getRangeAt(0);
-    if (!document.getElementById('viewerContent').contains(range.commonAncestorContainer)) {
-      hideAnnotationToolbar(); return;
-    }
-    // Use mouse-release position — more reliable than range.getBoundingClientRect()
-    // which can return wrong coordinates inside a setTimeout in some browsers.
-    showAnnotationToolbar({ top: mouseY, bottom: mouseY, left: mouseX, right: mouseX, width: 0, height: 0 }, text);
+    if (!document.getElementById('viewerContent').contains(range.commonAncestorContainer)) return;
+    showPendingAnnotation(text);
   }, 10);
 });
 
-function showAnnotationToolbar(selRect, selectedText) {
-  hideAnnotationToolbar();
-
-  const toolbar = document.createElement('div');
-  toolbar.id = 'ann-toolbar';
-  toolbar.innerHTML = `
-    <span class="ann-toolbar-label">Tag</span>
-    <input id="ann-tag-input" type="text" placeholder="e.g. sublime"
-           value="${reselectAnnId ? escapeHtml(reselectTag) : ''}"
-           style="width:100px; padding:0.25rem 0.45rem; border:1px solid #c5cae9;
-                  border-radius:5px; font-size:0.82rem; font-family:inherit; outline:none">
-    <span class="ann-toolbar-label" style="color:#ccc">Note</span>
-    <input id="ann-note-input" type="text" placeholder="optional"
-           value="${reselectAnnId ? escapeHtml(reselectNote) : ''}"
-           style="width:140px; padding:0.25rem 0.45rem; border:1px solid #e0e0e0;
-                  border-radius:5px; font-size:0.82rem; font-family:inherit; outline:none">
-    <button id="ann-save-btn"
-            style="background:#5c6bc0; color:white; border:none; border-radius:5px;
-                   padding:0.28rem 0.8rem; font-size:0.82rem; cursor:pointer; font-family:inherit">
-      ${reselectAnnId ? 'Update' : 'Annotate'}
-    </button>
-    <button id="ann-cancel-btn"
-            style="background:none; border:none; color:#ccc; cursor:pointer;
-                   font-size:1.1rem; line-height:1; padding:0 0.1rem">✕</button>`;
-
-  // Insert hidden to measure actual dimensions, then position
-  toolbar.style.visibility = 'hidden';
-  document.body.appendChild(toolbar);
-  const { width: tw, height: th } = toolbar.getBoundingClientRect();
-  toolbar.style.visibility = '';
-
-  // Position: above the selection, centred, clamped to viewport
-  let top  = selRect.top  - th - 8;
-  let left = selRect.left + selRect.width / 2 - tw / 2;
-  if (top < 8) top = selRect.bottom + 8;
-  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
-  toolbar.style.cssText += `position:fixed; top:${top}px; left:${left}px;`;
-
-  document.getElementById('ann-tag-input').focus();
-
-  const doSave = async () => {
-    const tag  = document.getElementById('ann-tag-input').value.trim();
-    const note = document.getElementById('ann-note-input').value.trim();
-    if (!tag) {
-      document.getElementById('ann-tag-input').style.borderColor = '#e53935';
-      document.getElementById('ann-tag-input').focus();
-      return;
-    }
-    hideAnnotationToolbar();
-    window.getSelection()?.removeAllRanges();
-    await saveAnnotation(selectedText, tag.toLowerCase().replace(/\s+/g, '-'), note);
-  };
-
-  document.getElementById('ann-save-btn').addEventListener('click', doSave);
-  const doCancel = () => {
-    hideAnnotationToolbar();
-    window.getSelection()?.removeAllRanges();
-    if (reselectAnnId) cancelReselect();
-  };
-  document.getElementById('ann-cancel-btn').addEventListener('click', doCancel);
-  for (const inputId of ['ann-tag-input', 'ann-note-input']) {
-    document.getElementById(inputId).addEventListener('keydown', e => {
-      if (e.key === 'Enter')  { e.preventDefault(); doSave(); }
-      if (e.key === 'Tab' && inputId === 'ann-tag-input')
-        { e.preventDefault(); document.getElementById('ann-note-input').focus(); }
-      if (e.key === 'Escape') { doCancel(); }
-    });
-  }
+function showPendingAnnotation(selectedText) {
+  pendingText = selectedText;
+  document.getElementById('pending-ann-title').textContent =
+    reselectAnnId ? 'Update passage' : 'New annotation';
+  document.getElementById('pending-passage-preview').textContent =
+    '\u201c' + selectedText + '\u201d';
+  document.getElementById('pending-tag').value  = reselectAnnId ? reselectTag  : '';
+  document.getElementById('pending-note').value = reselectAnnId ? reselectNote : '';
+  document.getElementById('pending-save').textContent = reselectAnnId ? 'Update' : 'Annotate';
+  document.getElementById('pending-tag').style.borderColor = '';
+  document.getElementById('pending-annotation').hidden = false;
+  document.getElementById('pending-tag').focus();
 }
 
-function hideAnnotationToolbar() {
-  document.getElementById('ann-toolbar')?.remove();
+function hidePendingAnnotation() {
+  document.getElementById('pending-annotation').hidden = true;
+  document.getElementById('pending-tag').value  = '';
+  document.getElementById('pending-note').value = '';
+  pendingText = null;
 }
 
 async function saveAnnotation(sourcePassage, tag, note) {
