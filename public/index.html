@@ -760,12 +760,6 @@
 </div><!-- /workspace -->
 
 <script>
-// ── Temporary click diagnostic ────────────────────────────────────────────────
-document.addEventListener('click', function(e) {
-  console.log('[CLICK]', e.target.tagName, JSON.stringify(e.target.className),
-    'cat-header?', !!e.target.closest('.cat-header'));
-}, true);
-
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 function escapeHtml(str) {
@@ -1257,7 +1251,7 @@ function renderTagBrowser(tags, categories) {
     const cid = escapeHtml(cat.id);
     const cname = escapeHtml(JSON.stringify(cat.name));
     html += `<div class="cat-section">`;
-    html += `<div class="cat-header" onclick="console.log('[cat-header click]');openCategoryEditor('${cid}')">
+    html += `<div class="cat-header" data-cat-id="${cid}">
       <span class="cat-header-label">${escapeHtml(cat.name)}</span>
       <div class="cat-header-actions">
         <button onclick="event.stopPropagation();confirmDeleteCat('${cid}',${cname})" title="Delete category">🗑</button>
@@ -1345,6 +1339,10 @@ function renderTagBrowser(tags, categories) {
 }
 
 document.getElementById('tagList').addEventListener('click', async e => {
+  // Open category editor (click on a category header; delete button uses stopPropagation)
+  const catHeaderEl = e.target.closest('.cat-header[data-cat-id]');
+  if (catHeaderEl) { openCategoryEditor(catHeaderEl.dataset.catId); return; }
+
   // Remove tag from category (× button)
   const removeTagBtn = e.target.closest('.cat-remove-tag');
   if (removeTagBtn) {
@@ -1516,9 +1514,7 @@ async function confirmDeleteCat(catId, name) {
 let activeCatEditorId = null;
 
 function openCategoryEditor(catId) {
-  console.log('[cat] openCategoryEditor called, catId:', catId, 'categoriesData.length:', categoriesData.length);
   const cat = categoriesData.find(c => c.id === catId);
-  console.log('[cat] cat found:', cat ? cat.name : 'NOT FOUND');
   if (!cat) return;
   activeCatEditorId = catId;
 
