@@ -12,20 +12,24 @@ Keel gives you a three-column workspace in your browser:
 
 | Column | Purpose |
 |---|---|
-| **Left — Sidebar** | Upload documents · Browse and filter by tag · Export or delete the corpus (inside the Upload card) |
-| **Centre — Library** | All your documents, with full-text search and sort controls |
-| **Right — Reader** | Click a document title to read it and annotate passages |
+| **Left — Sidebar** | Upload documents · Browse and filter by tag · Organise tags into colour-coded categories · Export or delete the corpus |
+| **Centre — Library** | All your documents, with full-text search, date range filter, boolean tag filter, and sort controls |
+| **Right — Reader / Research** | Read and annotate documents · Switch to the Research tab for corpus-wide analysis tools |
 
 You can:
 - **Upload** a folder of text files in one drag-and-drop
 - **Search** across the full text of every document — and across your annotations
+- **Filter** by date range, by a single tag (click the sidebar), or by a boolean tag expression (`#tag1 AND #tag2`, `#a OR NOT #b`)
 - **Sort** the library by date (oldest or newest first) or by title (A–Z or Z–A)
 - **Browse by tag** — click a tag in the sidebar to filter the library to matching documents
+- **Organise tags into categories** — create colour-coded category groups in the sidebar; collapse or expand them; add or remove tags from each group
+- **Rename or delete tags** corpus-wide — hover a tag in the sidebar and click ✎ to rename or 🗑 to delete; all documents and annotations update automatically
 - **Tag documents** — click `+ tag` on any document row to label it; click `×` on a tag to remove it
 - **Annotate passages** — select any text in the Reader to attach a category tag and an optional note
 - **Edit annotations** — click the pencil icon on any annotation to revise or delete it
 - **Active document** — the open document is highlighted in the Library so you always know where you are
 - **Annotations only** — check the toggle in the Reader to hide the document body and focus on your annotations
+- **Research tools** — switch to the Research tab in the Reader column to access corpus-wide analysis (see below)
 
 All data is stored in a single file (`keel.db`) on your computer. Nothing leaves your machine unless you choose to enable cloud sync.
 
@@ -209,6 +213,20 @@ This passage describes ==the concept of the sublime== #sublime in Romantic music
 
 ---
 
+## Research tools
+
+Switch to the **Research** tab (top of the Reader column) to access corpus-wide analysis tools. These work on your full document collection without requiring any AI:
+
+| Tool | What it does |
+|---|---|
+| **KWIC** | Keyword in context — find every occurrence of a term across the corpus with surrounding text; click any row to open that document |
+| **Collocates** | Which words appear most often near a given term; click a word to run KWIC on it |
+| **Frequency** | Plot term frequency, tag coverage, or category coverage per decade as a grouped bar chart — supports multiple series simultaneously using a chip selector |
+| **Co-occurrence** | Which tag pairs appear together most often on the same document |
+| **Timeline** | Documents plotted by year, dot size scaled to annotation count, coloured by their most frequent tag |
+
+---
+
 ## Cloud sync (optional)
 
 If you want to share your corpus with collaborators or access it from another computer, you can connect a free [Supabase](https://supabase.com) project.
@@ -220,7 +238,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-service-role-key
 ```
 
-Restart the app. A **↑↓ Sync** button will appear in the header. Click it to push your data to Supabase and pull any changes from collaborators. The sync engine resolves conflicts automatically: the most recent change wins for document fields; tags are merged so no label is ever lost.
+Restart the app. A **↑↓ Sync** button will appear in the header. Click it to push your data to Supabase and pull any changes from collaborators. The sync engine resolves conflicts automatically: the most recent change wins for document fields; tags are merged so no label is ever lost. Tag categories (names, colours, and tag memberships) sync alongside documents and annotations.
 
 ---
 

@@ -63,61 +63,48 @@ The UI has been refined from a developer tool into one suitable for a non-techni
 - Re-select passage: activates re-selection mode; fresh selection updates the existing annotation
 - Annotations only toggle: hide document body to focus on annotation list
 
+**Tag management:**
+- Tag editor: rename or delete a tag corpus-wide from the sidebar (✎ / 🗑 buttons on hover); all `doc.tags` arrays and `annotation.tag` fields updated atomically
+- Tag categories: create named, colour-coded groups; collapse/expand per group; add/remove tags from categories; `+ Category` button in the sidebar header
+- `tag_categories` synced to Supabase alongside documents and annotations (`CategorySchema`, LWW on `tags` JSON field)
+
 **Sync:**
 - Push dirty documents and annotations to Supabase after every write
 - Pull on demand via ↑↓ Sync button
 - Conflict resolution: LWW for document fields, union-set merge for tags, append-only for annotations
 - UI sync status badge (dirty count, last synced timestamp)
 - Auto-migration: `initSchema()` reads `PRAGMA table_info` and adds missing columns on startup
+- `nullDefaults` applied at push time so null fields satisfy remote NOT NULL constraints
 
 **Export:**
 - Zip export: one `.md` per document (YAML front-matter + body) + `annotations.csv`
 
 ---
 
-## 🔜 Current focus: Phase 4 — DH Research Tools
+## ✅ Phase 4 — DH Research Tools
 
-The primary research workflow at this stage is **manual annotation and philosophical categorisation** of text passages. The musicologist reads documents, selects passages, assigns concept tags, and builds a structured record of where ideas appear in the corpus. AI assistance is not needed for this work.
+### 4a · Search refinement ✅
 
-What is needed are better tools for **navigating, comparing, and analysing** the annotations that accumulate from that process. This phase adds those tools without introducing any AI dependency.
+- **Date range filter:** Year from/to inputs alongside the search bar, client-side filter on `publication_date`
+- **Boolean tag filter:** full AND / OR / NOT expression over `#tags` (e.g. `#Erhabenheit AND NOT #Kant`)
+- **KWIC (keyword in context):** `GET /api/analysis/kwic` — every occurrence of a term across the corpus with surrounding text; click a row to open that document
 
-### 4a · Search refinement
+### 4b · Visualisation ✅
 
-The current search is a single keyword box. More precise filtering would let the researcher answer questions like: *"Show me all documents from 1800–1830 that are tagged Erhabenheit"* or *"Which documents have both Kant and Natur as annotation tags?"*
+- **Document timeline:** SVG scatter plot, x = year, dot size = √(annotation count), colour = dominant tag; tooltip on hover, click to open doc; `GET /api/analysis/timeline`
+- **Tag co-occurrence:** ranked list of tag pairs by shared-document count; `GET /api/analysis/cooccurrence`
+- **Collocates:** most frequent neighbours of a search term (stopword-filtered); click a word to run KWIC; `GET /api/analysis/collocates`
 
-- **Date range filter:** from/to inputs alongside the search bar to narrow results by `publication_date`
-- **Multi-tag filter:** AND logic across multiple tags (documents must carry all selected tags)
-- **Faceted search:** combine keyword + one or more tags + date range in a single query
-- **Concordance / keyword in context (KWIC):** enter a term and see every occurrence across the corpus with ~100 characters of surrounding text — a standard Digital Humanities tool for studying how a word is used
+### 4c · Statistical analysis ✅
 
-### 4b · Visualisation and concept mapping
+- **Multi-series frequency chart:** term / tag / category occurrences per decade rendered as a grouped SVG bar chart; up to N series plotted simultaneously using a chip-selector UI; `GET /api/analysis/termfreq`
 
-A simple Analysis panel (accessible from the header, separate from the reading workflow) with lightweight visualisations built on the existing annotation data:
+### 4d · Export for external DH tools 🔜
 
-- **Tag frequency chart:** horizontal bar chart of all tags by document count and annotation count, clickable to filter the library (extends the existing tag browser)
-- **Document timeline:** documents plotted on a horizontal date axis, dots sized by annotation count, coloured by their most frequent tag — reveals chronological distribution of the corpus and when concepts were most actively discussed
-- **Tag co-occurrence matrix:** a grid showing which tag pairs appear together most often on the same document or same passage, surfacing conceptual associations without requiring any analysis
-- **Annotation density per document:** which documents have the most annotations, which are sparse — helps prioritise reading
-
-Implementation: client-side rendering using D3.js or a lightweight chart library; data served from a new `GET /api/analysis` endpoint that aggregates from the existing tables.
-
-### 4c · Statistical analysis
-
-Basic quantitative tools that complement close reading:
-
-- **Word frequency:** count occurrences of a term across the whole corpus, broken down by document and by date — useful for tracking the rise and fall of a concept over time
-- **Annotation statistics:** per-tag counts of passages, documents, authors, and date ranges; per-document annotation density
-- **Chronological distribution:** how annotation tags are distributed across decades — which concepts dominate early vs. late in the corpus
-
-These analyses run against the existing SQLite tables; no new data model is required.
-
-### 4d · Export for external DH tools
-
-The zip export already produces `.md` files and `annotations.csv`. Extend it with formats that open directly in established Digital Humanities software:
-
-- **REFI-QDA (`.qdpx`):** the standard interchange format for qualitative data analysis — opens in Atlas.ti, MAXQDA, NVivo, and RQDA; allows the researcher to continue work in tools they already know
-- **Zotero RDF:** export document metadata as a Zotero library (`.rdf`) so references can be cited and organised alongside the corpus work
-- **TSV / CSV for R and Python:** clean tabular export of annotations with document metadata, suitable for statistical analysis in R (quanteda, stylo) or Python (pandas, NLTK)
+- **REFI-QDA (`.qdpx`):** standard interchange format for Atlas.ti, MAXQDA, NVivo, RQDA
+- **Zotero RDF:** export document metadata as a Zotero library
+- **TSV / CSV for R and Python:** annotations + document metadata in tabular form (currently: `annotations.csv` inside the zip export)
+- **CSV export for frequency analyses:** "Download CSV" button on the multi-series frequency chart (decade × series columns)
 
 ---
 
