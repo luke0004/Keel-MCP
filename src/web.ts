@@ -1172,35 +1172,62 @@ const GERMAN_STOPWORDS = new Set([
 
 app.get('/api/analysis/termfreq', (req: any, res: any) => {
   const term = String(req.query.q ?? '').trim();
+  const mode = String(req.query.mode ?? 'term'); // 'term' | 'tag'
   if (!term) return res.json([]);
   try {
     const db = getDB();
     try {
-      const docs = db.prepare(`
-        SELECT publication_date, content FROM corpus_documents
-        WHERE publication_date IS NOT NULL AND publication_date != ''
-      `).all() as { publication_date: string; content: string }[];
+      const buckets = new Map<string, { occurrences: number; doc_count: number; total_docs: number }>();
 
-      const termLower = term.toLowerCase();
-      const buckets   = new Map<string, { occurrences: number; doc_count: number; total_docs: number }>();
-
-      for (const doc of docs) {
-        const year = parseInt(doc.publication_date.slice(0, 4), 10);
-        if (isNaN(year)) continue;
-        const key = `${Math.floor(year / 10) * 10}s`;
+      const ensureBucket = (key: string) => {
         if (!buckets.has(key)) buckets.set(key, { occurrences: 0, doc_count: 0, total_docs: 0 });
-        const b = buckets.get(key)!;
-        b.total_docs++;
+        return buckets.get(key)!;
+      };
+      const decadeKey = (pub: string) => {
+        const y = parseInt(pub.slice(0, 4), 10);
+        return isNaN(y) ? null : `${Math.floor(y / 10) * 10}s`;
+      };
 
-        const lower = (doc.content || '').toLowerCase();
-        let count = 0, idx = 0;
-        while (true) {
-          const pos = lower.indexOf(termLower, idx);
-          if (pos === -1) break;
-          count++;
-          idx = pos + 1;
+      if (mode === 'tag') {
+        // Count documents per decade that carry the tag in doc.tags
+        const tagLower = term.toLowerCase();
+        const docs = db.prepare(`
+          SELECT publication_date, tags FROM corpus_documents
+          WHERE publication_date IS NOT NULL AND publication_date != ''
+        `).all() as { publication_date: string; tags: string }[];
+
+        for (const doc of docs) {
+          const key = decadeKey(doc.publication_date);
+          if (!key) continue;
+          const b = ensureBucket(key);
+          b.total_docs++;
+          let tags: string[] = [];
+          try { tags = JSON.parse(doc.tags || '[]'); } catch { /* */ }
+          if (tags.some(t => t.toLowerCase() === tagLower)) { b.occurrences++; b.doc_count++; }
         }
-        if (count > 0) { b.occurrences += count; b.doc_count++; }
+      } else {
+        // Count text occurrences per decade across document content
+        const termLower = term.toLowerCase();
+        const docs = db.prepare(`
+          SELECT publication_date, content FROM corpus_documents
+          WHERE publication_date IS NOT NULL AND publication_date != ''
+        `).all() as { publication_date: string; content: string }[];
+
+        for (const doc of docs) {
+          const key = decadeKey(doc.publication_date);
+          if (!key) continue;
+          const b = ensureBucket(key);
+          b.total_docs++;
+          const lower = (doc.content || '').toLowerCase();
+          let count = 0, idx = 0;
+          while (true) {
+            const pos = lower.indexOf(termLower, idx);
+            if (pos === -1) break;
+            count++;
+            idx = pos + 1;
+          }
+          if (count > 0) { b.occurrences += count; b.doc_count++; }
+        }
       }
 
       const result = [...buckets.entries()]

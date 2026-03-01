@@ -400,6 +400,15 @@
     .ana-tab.ana-active { background: #eef0fb; color: #3f51b5; border-color: #9fa8da; font-weight: 600; }
     .ana-tab:hover:not(.ana-active) { background: #f5f6ff; }
 
+    /* ── Frequency mode toggle ── */
+    .freq-mode-btn {
+      padding: 0.28rem 0.6rem;
+      border: none; font-size: 0.76rem; cursor: pointer;
+      background: white; color: #888; font-family: inherit;
+    }
+    .freq-mode-btn.active { background: #5c6bc0; color: white; }
+    .freq-mode-btn:hover:not(.active) { background: #eef0fb; color: #3f51b5; }
+
     /* ── KWIC concordance ── */
     .kwic-row {
       display: flex; border-bottom: 1px solid #f5f5f5;
@@ -617,12 +626,16 @@
 
     <!-- Term frequency over time -->
     <div id="anaPanelFreq" style="display:none; flex-direction:column; flex:1; min-height:0">
-      <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem; flex-shrink:0">
-        <input id="freqInput" type="text" placeholder="Term frequency over time…" style="flex:1">
+      <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem; flex-shrink:0; align-items:center">
+        <div style="display:flex; border:1px solid #dde1ea; border-radius:6px; overflow:hidden; flex-shrink:0">
+          <button id="freqModeTermBtn" class="freq-mode-btn active" onclick="setFreqMode('term')">Term</button>
+          <button id="freqModeTagBtn"  class="freq-mode-btn"        onclick="setFreqMode('tag')">#Tag</button>
+        </div>
+        <input id="freqInput" type="text" placeholder="Term to plot over time…" style="flex:1">
         <button id="freqBtn" class="btn-sm">Plot</button>
       </div>
       <div id="freqResults" style="flex:1; overflow-y:auto; min-height:0">
-        <span style="color:#ccc; font-size:0.83rem">Enter a term to plot its frequency per decade.</span>
+        <span style="color:#ccc; font-size:0.83rem">Enter a term or tag to plot its frequency per decade.</span>
       </div>
     </div>
 
@@ -1752,6 +1765,16 @@ async function runCollocates() {
 
 // ── Term frequency over time ───────────────────────────────────────────────────
 
+let freqMode = 'term'; // 'term' | 'tag'
+
+function setFreqMode(mode) {
+  freqMode = mode;
+  document.getElementById('freqModeTermBtn').classList.toggle('active', mode === 'term');
+  document.getElementById('freqModeTagBtn').classList.toggle('active',  mode === 'tag');
+  document.getElementById('freqInput').placeholder =
+    mode === 'tag' ? 'Tag name to plot over time…' : 'Term to plot over time…';
+}
+
 document.getElementById('freqBtn').addEventListener('click', runTermFreq);
 document.getElementById('freqInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runTermFreq();
@@ -1763,14 +1786,16 @@ async function runTermFreq() {
   if (!term) return;
   results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Loading…</span>';
   try {
-    const data = await fetch('/api/analysis/termfreq?q=' + encodeURIComponent(term)).then(r => r.json());
+    const url  = `/api/analysis/termfreq?q=${encodeURIComponent(term)}&mode=${freqMode}`;
+    const data = await fetch(url).then(r => r.json());
     if (!data.length) {
       results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No dated documents in corpus.</span>';
       return;
     }
 
-    const maxOcc = Math.max(...data.map(d => d.occurrences), 1);
-    const total  = data.reduce((s, d) => s + d.occurrences, 0);
+    const isTag   = freqMode === 'tag';
+    const maxOcc  = Math.max(...data.map(d => d.occurrences), 1);
+    const total   = data.reduce((s, d) => s + d.occurrences, 0);
     const docHits = data.reduce((s, d) => s + d.doc_count, 0);
 
     const W = 600, H = 190, padL = 32, padR = 10, padT = 14, padB = 50;
@@ -1781,37 +1806,37 @@ async function runTermFreq() {
     const barW  = Math.min(36, slot * 0.72);
 
     const bars = data.map((d, i) => {
-      const cx  = padL + (i + 0.5) * slot;
-      const bh  = d.occurrences / maxOcc * plotH;
-      const x   = (cx - barW / 2).toFixed(1);
-      const y   = (padT + plotH - bh).toFixed(1);
-      const col = d.occurrences > 0 ? '#7986cb' : '#eef0f5';
+      const cx     = padL + (i + 0.5) * slot;
+      const bh     = d.occurrences / maxOcc * plotH;
+      const x      = (cx - barW / 2).toFixed(1);
+      const y      = (padT + plotH - bh).toFixed(1);
+      const col    = d.occurrences > 0 ? (isTag ? '#81a1c1' : '#7986cb') : '#eef0f5';
       const labelY = (padT + plotH + 13).toFixed(1);
       return `
         <rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${Math.max(1, bh).toFixed(1)}"
               fill="${col}" rx="2"/>
         ${d.occurrences > 0
           ? `<text x="${cx.toFixed(1)}" y="${(padT + plotH - bh - 4).toFixed(1)}"
-                   text-anchor="middle" font-size="8" fill="#7986cb">${d.occurrences}</text>`
+                   text-anchor="middle" font-size="8" fill="${isTag ? '#5e81ac' : '#7986cb'}">${d.occurrences}</text>`
           : ''}
         <text x="${cx.toFixed(1)}" y="${labelY}"
               text-anchor="end" font-size="9" fill="#bbb"
               transform="rotate(-45,${cx.toFixed(1)},${labelY})">${d.bucket}</text>`;
     }).join('');
 
-    const axisY = padT + plotH;
+    const axisY  = padT + plotH;
+    const legend = isTag
+      ? `#${escapeHtml(term)} · ${total} document${total !== 1 ? 's' : ''} tagged`
+      : `<em>${escapeHtml(term)}</em> · ${total} occurrence${total !== 1 ? 's' : ''} in ${docHits} document${docHits !== 1 ? 's' : ''}`;
     results.innerHTML = `
-      <div style="font-size:0.72rem; color:#bbb; margin-bottom:0.4rem">
-        <em>${escapeHtml(term)}</em> · ${total} occurrence${total !== 1 ? 's' : ''}
-        in ${docHits} document${docHits !== 1 ? 's' : ''}
-      </div>
+      <div style="font-size:0.72rem; color:#bbb; margin-bottom:0.4rem">${legend}</div>
       <svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible; display:block">
         <line x1="${padL}" y1="${axisY}" x2="${W - padR}" y2="${axisY}"
               stroke="#dde1ea" stroke-width="1"/>
         ${bars}
       </svg>
       <div style="font-size:0.71rem; color:#bbb; margin-top:0.2rem; padding-left:${padL}px">
-        bar height = occurrence count per decade
+        bar height = ${isTag ? 'documents tagged per decade' : 'occurrence count per decade'}
         ${data.some(d => d.total_docs > d.doc_count)
           ? ' · grey bars = no occurrences that decade'
           : ''}
