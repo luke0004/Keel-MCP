@@ -1251,13 +1251,15 @@ function renderTagBrowser(tags, categories) {
   // Render each category section
   for (const cat of categories) {
     const isCollapsed = collapsedCategories.has(cat.id);
+    const cid = escapeHtml(cat.id);
+    const cname = escapeHtml(JSON.stringify(cat.name)); // safe for onclick attribute
     html += `<div class="cat-section">`;
-    html += `<div class="cat-header" data-cat-id="${escapeHtml(cat.id)}">
-      <span class="cat-arrow" data-cat-collapse="${escapeHtml(cat.id)}">${isCollapsed ? '▸' : '▾'}</span>
-      <span class="cat-header-label">${escapeHtml(cat.name)}</span>
-      <div class="cat-header-actions" onclick="event.stopPropagation()">
-        <button class="cat-rename-btn" data-cat-id="${escapeHtml(cat.id)}" title="Edit category">✎</button>
-        <button class="cat-delete-btn" data-cat-id="${escapeHtml(cat.id)}" data-cat-name="${escapeHtml(cat.name)}" title="Delete category">🗑</button>
+    html += `<div class="cat-header">
+      <span class="cat-arrow" onclick="event.stopPropagation();toggleCatCollapse('${cid}',this)">${isCollapsed ? '▸' : '▾'}</span>
+      <span class="cat-header-label" onclick="openCategoryEditor('${cid}')">${escapeHtml(cat.name)}</span>
+      <div class="cat-header-actions">
+        <button onclick="event.stopPropagation();openCategoryEditor('${cid}')" title="Edit category">✎</button>
+        <button onclick="event.stopPropagation();confirmDeleteCat('${cid}',${cname})" title="Delete category">🗑</button>
       </div>
     </div>`;
     html += `<div class="cat-body${isCollapsed ? ' collapsed' : ''}" data-cat-body="${escapeHtml(cat.id)}">`;
@@ -1295,9 +1297,8 @@ function renderTagBrowser(tags, categories) {
   if (uncategorized.length) {
     const isCollapsed = collapsedCategories.has('__uncategorized__');
     html += `<div class="cat-section">`;
-    html += `<div class="cat-header" data-cat-id="__uncategorized__">
-      <span class="cat-arrow" data-cat-collapse="__uncategorized__">${isCollapsed ? '▸' : '▾'}</span>
-      <span class="cat-color-dot" style="background:#ccc"></span>
+    html += `<div class="cat-header" onclick="toggleCatCollapse('__uncategorized__',this.querySelector('.cat-arrow'))">
+      <span class="cat-arrow">${isCollapsed ? '▸' : '▾'}</span>
       <span class="cat-header-label">Uncategorized</span>
     </div>`;
     html += `<div class="cat-body${isCollapsed ? ' collapsed' : ''}" data-cat-body="__uncategorized__">`;
@@ -1345,46 +1346,6 @@ function renderTagBrowser(tags, categories) {
 }
 
 document.getElementById('tagList').addEventListener('click', async e => {
-  // Arrow click → collapse/expand only
-  const collapseArrow = e.target.closest('[data-cat-collapse]');
-  if (collapseArrow) {
-    e.stopPropagation();
-    const catId = collapseArrow.dataset.catCollapse;
-    if (collapsedCategories.has(catId)) collapsedCategories.delete(catId);
-    else collapsedCategories.add(catId);
-    const nowCollapsed = collapsedCategories.has(catId);
-    const body = document.querySelector(`.cat-body[data-cat-body="${CSS.escape(catId)}"]`);
-    if (body) body.classList.toggle('collapsed', nowCollapsed);
-    collapseArrow.textContent = nowCollapsed ? '▸' : '▾';
-    return;
-  }
-
-  // Category header click (not arrow, not actions) → open editor in center column
-  const catHeader = e.target.closest('.cat-header');
-  if (catHeader && !e.target.closest('.cat-header-actions')) {
-    const catId = catHeader.dataset.catId;
-    if (catId && catId !== '__uncategorized__') openCategoryEditor(catId);
-    return;
-  }
-
-  // Edit button → open category editor
-  const catRenameBtn = e.target.closest('.cat-rename-btn');
-  if (catRenameBtn) {
-    e.stopPropagation();
-    openCategoryEditor(catRenameBtn.dataset.catId);
-    return;
-  }
-
-  // Delete category
-  const catDelBtn = e.target.closest('.cat-delete-btn');
-  if (catDelBtn) {
-    e.stopPropagation();
-    const { catId, catName } = catDelBtn.dataset;
-    if (!confirm(`Delete category "${catName}"?\nTags will not be deleted — they'll become uncategorized.`)) return;
-    await deleteCategory(catId);
-    return;
-  }
-
   // Remove tag from category (× button)
   const removeTagBtn = e.target.closest('.cat-remove-tag');
   if (removeTagBtn) {
@@ -1543,6 +1504,20 @@ async function removeTagFromCategory(catId, tag) {
     if (!r.ok) throw new Error((await r.json()).error || 'Remove failed');
     await loadTagSummary();
   } catch (err) { alert('Could not remove tag from category: ' + err.message); }
+}
+
+function toggleCatCollapse(catId, arrowEl) {
+  if (collapsedCategories.has(catId)) collapsedCategories.delete(catId);
+  else collapsedCategories.add(catId);
+  const nowCollapsed = collapsedCategories.has(catId);
+  const body = document.querySelector(`.cat-body[data-cat-body="${CSS.escape(catId)}"]`);
+  if (body) body.classList.toggle('collapsed', nowCollapsed);
+  if (arrowEl) arrowEl.textContent = nowCollapsed ? '▸' : '▾';
+}
+
+async function confirmDeleteCat(catId, name) {
+  if (!confirm(`Delete category "${name}"?\nTags will not be deleted — they'll become uncategorized.`)) return;
+  await deleteCategory(catId);
 }
 
 // ── Category editor (center column) ──────────────────────────────────────────
