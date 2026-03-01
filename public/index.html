@@ -585,8 +585,10 @@
   <div id="analysisPanel" style="display:none; flex-direction:column; flex:1; min-height:0; overflow:hidden">
 
     <!-- Sub-tabs -->
-    <div style="display:flex; gap:0.3rem; margin-bottom:0.8rem; flex-shrink:0">
+    <div style="display:flex; gap:0.25rem; margin-bottom:0.8rem; flex-shrink:0; flex-wrap:wrap">
       <button class="ana-tab ana-active" id="anaTabKwic"     onclick="showAnalysis('kwic')">KWIC</button>
+      <button class="ana-tab"            id="anaTabCollo"    onclick="showAnalysis('collo')">Collocates</button>
+      <button class="ana-tab"            id="anaTabFreq"     onclick="showAnalysis('freq')">Frequency</button>
       <button class="ana-tab"            id="anaTabCooc"     onclick="showAnalysis('cooc')">Co-occurrence</button>
       <button class="ana-tab"            id="anaTabTimeline" onclick="showAnalysis('timeline')">Timeline</button>
     </div>
@@ -599,6 +601,28 @@
       </div>
       <div id="kwicResults" style="flex:1; overflow-y:auto; min-height:0">
         <span style="color:#ccc; font-size:0.83rem">Enter a term to search across the full corpus.</span>
+      </div>
+    </div>
+
+    <!-- Collocates -->
+    <div id="anaPanelCollo" style="display:none; flex-direction:column; flex:1; min-height:0">
+      <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem; flex-shrink:0">
+        <input id="colloInput" type="text" placeholder="Find collocates of…" style="flex:1">
+        <button id="colloBtn" class="btn-sm">Find</button>
+      </div>
+      <div id="colloResults" style="flex:1; overflow-y:auto; min-height:0">
+        <span style="color:#ccc; font-size:0.83rem">Enter a term to see its most frequent neighbours.</span>
+      </div>
+    </div>
+
+    <!-- Term frequency over time -->
+    <div id="anaPanelFreq" style="display:none; flex-direction:column; flex:1; min-height:0">
+      <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem; flex-shrink:0">
+        <input id="freqInput" type="text" placeholder="Term frequency over time…" style="flex:1">
+        <button id="freqBtn" class="btn-sm">Plot</button>
+      </div>
+      <div id="freqResults" style="flex:1; overflow-y:auto; min-height:0">
+        <span style="color:#ccc; font-size:0.83rem">Enter a term to plot its frequency per decade.</span>
       </div>
     </div>
 
@@ -1628,8 +1652,17 @@ function switchTab(tab) {
 
 function showAnalysis(tab) {
   activeAnalysisTab = tab;
-  const panels = { kwic: ['anaPanelKwic', 'flex'], cooc: ['anaPanelCooc', 'block'], timeline: ['anaPanelTimeline', 'block'] };
-  const tabIds  = { kwic: 'anaTabKwic', cooc: 'anaTabCooc', timeline: 'anaTabTimeline' };
+  const panels = {
+    kwic:     ['anaPanelKwic',     'flex'],
+    collo:    ['anaPanelCollo',    'flex'],
+    freq:     ['anaPanelFreq',     'flex'],
+    cooc:     ['anaPanelCooc',     'block'],
+    timeline: ['anaPanelTimeline', 'block'],
+  };
+  const tabIds = {
+    kwic: 'anaTabKwic', collo: 'anaTabCollo', freq: 'anaTabFreq',
+    cooc: 'anaTabCooc', timeline: 'anaTabTimeline',
+  };
   for (const [t, [panelId, display]] of Object.entries(panels)) {
     const el = document.getElementById(panelId);
     if (el) el.style.display = t === tab ? display : 'none';
@@ -1671,6 +1704,118 @@ async function runKwic() {
       </div>`
     ).join('');
     results.innerHTML = header + rows;
+  } catch (err) {
+    results.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// ── Collocates ────────────────────────────────────────────────────────────────
+
+document.getElementById('colloBtn').addEventListener('click', runCollocates);
+document.getElementById('colloInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runCollocates();
+});
+
+async function runCollocates() {
+  const term    = document.getElementById('colloInput').value.trim();
+  const results = document.getElementById('colloResults');
+  if (!term) return;
+  results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Searching…</span>';
+  try {
+    const data = await fetch('/api/analysis/collocates?q=' + encodeURIComponent(term)).then(r => r.json());
+    if (!data.length) {
+      results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No collocates found — term may not appear in corpus.</span>';
+      return;
+    }
+    const maxCount = data[0].count;
+    // Font size range: 0.78rem – 1.5rem; colour darkens with frequency
+    const items = data.map(({ word, count }) => {
+      const t   = count / maxCount;                         // 0–1
+      const rem = (0.78 + t * 0.72).toFixed(2);
+      const lum = Math.round(72 - t * 38);                 // 72% → 34%
+      const col = `hsl(230,45%,${lum}%)`;
+      return `<span style="font-size:${rem}rem; color:${col}; cursor:pointer; line-height:1.75;
+                           display:inline-block; margin:0.1rem 0.25rem"
+                    title="${count} occurrence${count !== 1 ? 's' : ''}"
+                    onclick="document.getElementById('kwicInput').value='${escapeHtml(word)}';
+                             showAnalysis('kwic'); runKwic()">${escapeHtml(word)}</span>`;
+    }).join('');
+    results.innerHTML = `
+      <div style="font-size:0.72rem; color:#bbb; margin-bottom:0.55rem">
+        ${data.length} collocates of <em>${escapeHtml(term)}</em> · click a word to view in KWIC
+      </div>
+      <div style="line-height:1.9">${items}</div>`;
+  } catch (err) {
+    results.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// ── Term frequency over time ───────────────────────────────────────────────────
+
+document.getElementById('freqBtn').addEventListener('click', runTermFreq);
+document.getElementById('freqInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runTermFreq();
+});
+
+async function runTermFreq() {
+  const term    = document.getElementById('freqInput').value.trim();
+  const results = document.getElementById('freqResults');
+  if (!term) return;
+  results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Loading…</span>';
+  try {
+    const data = await fetch('/api/analysis/termfreq?q=' + encodeURIComponent(term)).then(r => r.json());
+    if (!data.length) {
+      results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No dated documents in corpus.</span>';
+      return;
+    }
+
+    const maxOcc = Math.max(...data.map(d => d.occurrences), 1);
+    const total  = data.reduce((s, d) => s + d.occurrences, 0);
+    const docHits = data.reduce((s, d) => s + d.doc_count, 0);
+
+    const W = 600, H = 190, padL = 32, padR = 10, padT = 14, padB = 50;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const n     = data.length;
+    const slot  = plotW / n;
+    const barW  = Math.min(36, slot * 0.72);
+
+    const bars = data.map((d, i) => {
+      const cx  = padL + (i + 0.5) * slot;
+      const bh  = d.occurrences / maxOcc * plotH;
+      const x   = (cx - barW / 2).toFixed(1);
+      const y   = (padT + plotH - bh).toFixed(1);
+      const col = d.occurrences > 0 ? '#7986cb' : '#eef0f5';
+      const labelY = (padT + plotH + 13).toFixed(1);
+      return `
+        <rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${Math.max(1, bh).toFixed(1)}"
+              fill="${col}" rx="2"/>
+        ${d.occurrences > 0
+          ? `<text x="${cx.toFixed(1)}" y="${(padT + plotH - bh - 4).toFixed(1)}"
+                   text-anchor="middle" font-size="8" fill="#7986cb">${d.occurrences}</text>`
+          : ''}
+        <text x="${cx.toFixed(1)}" y="${labelY}"
+              text-anchor="end" font-size="9" fill="#bbb"
+              transform="rotate(-45,${cx.toFixed(1)},${labelY})">${d.bucket}</text>`;
+    }).join('');
+
+    const axisY = padT + plotH;
+    results.innerHTML = `
+      <div style="font-size:0.72rem; color:#bbb; margin-bottom:0.4rem">
+        <em>${escapeHtml(term)}</em> · ${total} occurrence${total !== 1 ? 's' : ''}
+        in ${docHits} document${docHits !== 1 ? 's' : ''}
+      </div>
+      <svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible; display:block">
+        <line x1="${padL}" y1="${axisY}" x2="${W - padR}" y2="${axisY}"
+              stroke="#dde1ea" stroke-width="1"/>
+        ${bars}
+      </svg>
+      <div style="font-size:0.71rem; color:#bbb; margin-top:0.2rem; padding-left:${padL}px">
+        bar height = occurrence count per decade
+        ${data.some(d => d.total_docs > d.doc_count)
+          ? ' · grey bars = no occurrences that decade'
+          : ''}
+      </div>`;
   } catch (err) {
     results.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
   }

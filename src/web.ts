@@ -1154,6 +1154,116 @@ app.get('/api/analysis/timeline', (_req, res: any) => {
 });
 
 // ---------------------------------------------------------------------------
+// Term frequency over time — GET /api/analysis/termfreq?q=term
+// Returns occurrence count and document hit count per decade for a term.
+// ---------------------------------------------------------------------------
+
+const GERMAN_STOPWORDS = new Set([
+  'und','die','der','das','dem','den','des','ein','eine','einer','eines','einem','einen',
+  'ist','sind','war','waren','hat','haben','wird','werden','wurde','wurden','hatte','hatten',
+  'sich','auch','nicht','noch','aber','wie','bei','aus','von','mit','für','als','nach','nur',
+  'sie','wir','ich','man','ihr','ihn','ihm','dass','wenn','dann','doch','denn','weil','zwar',
+  'mehr','über','durch','oder','schon','alle','sein','eine','sowie','kann','wird','wurde',
+  'diese','dieser','dieses','diesen','diesem','jede','jeden','keinen','keine','kein',
+  'seine','seiner','seinen','seinem','ihren','ihrer','ihrem','welche','welcher','welchen',
+  'sehr','hier','nun','zum','zur','beim','ohne','etwa','immer','dabei','damit','davon',
+  'the','and','of','to','in','is','it','that','this','with','for','are','was','have',
+]);
+
+app.get('/api/analysis/termfreq', (req: any, res: any) => {
+  const term = String(req.query.q ?? '').trim();
+  if (!term) return res.json([]);
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare(`
+        SELECT publication_date, content FROM corpus_documents
+        WHERE publication_date IS NOT NULL AND publication_date != ''
+      `).all() as { publication_date: string; content: string }[];
+
+      const termLower = term.toLowerCase();
+      const buckets   = new Map<string, { occurrences: number; doc_count: number; total_docs: number }>();
+
+      for (const doc of docs) {
+        const year = parseInt(doc.publication_date.slice(0, 4), 10);
+        if (isNaN(year)) continue;
+        const key = `${Math.floor(year / 10) * 10}s`;
+        if (!buckets.has(key)) buckets.set(key, { occurrences: 0, doc_count: 0, total_docs: 0 });
+        const b = buckets.get(key)!;
+        b.total_docs++;
+
+        const lower = (doc.content || '').toLowerCase();
+        let count = 0, idx = 0;
+        while (true) {
+          const pos = lower.indexOf(termLower, idx);
+          if (pos === -1) break;
+          count++;
+          idx = pos + 1;
+        }
+        if (count > 0) { b.occurrences += count; b.doc_count++; }
+      }
+
+      const result = [...buckets.entries()]
+        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        .map(([bucket, d]) => ({ bucket, ...d }));
+      res.json(result);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Collocate analysis — GET /api/analysis/collocates?q=term&window=5
+// Returns the most frequent words appearing within ±window words of the term.
+// ---------------------------------------------------------------------------
+
+app.get('/api/analysis/collocates', (req: any, res: any) => {
+  const term   = String(req.query.q ?? '').trim();
+  const window = Math.min(10, Math.max(2, parseInt(String(req.query.window ?? '5'), 10)));
+  if (!term) return res.json([]);
+  try {
+    const db = getDB();
+    try {
+      const docs      = db.prepare('SELECT content FROM corpus_documents').all() as { content: string }[];
+      const termLower = term.toLowerCase();
+      const wordCounts = new Map<string, number>();
+      let total = 0;
+
+      outer: for (const doc of docs) {
+        const content = doc.content || '';
+        const lower   = content.toLowerCase();
+        let idx = 0;
+        while (true) {
+          const pos = lower.indexOf(termLower, idx);
+          if (pos === -1) break;
+          // Extract character-based context around the match, then tokenize
+          const ctx = (
+            content.slice(Math.max(0, pos - 150), pos) + ' ' +
+            content.slice(pos + term.length, Math.min(content.length, pos + term.length + 150))
+          ).toLowerCase();
+          for (const raw of ctx.split(/[\s,;:.!?()\[\]{}"'»«„"\u2013\u2014\-]+/)) {
+            const w = raw.replace(/[^a-zäöüß]/gi, '');
+            if (w.length < 3 || GERMAN_STOPWORDS.has(w)) continue;
+            wordCounts.set(w, (wordCounts.get(w) ?? 0) + 1);
+          }
+          idx = pos + 1;
+          if (++total > 500) break outer;
+        }
+      }
+
+      const result = [...wordCounts.entries()]
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 40)
+        .map(([word, count]) => ({ word, count }));
+      res.json(result);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Strip inline markup migration
 // ---------------------------------------------------------------------------
 
