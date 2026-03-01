@@ -12,7 +12,7 @@ Keel gives you a three-column workspace in your browser:
 
 | Column | Purpose |
 |---|---|
-| **Left — Sidebar** | Upload documents · Browse and filter by tag |
+| **Left — Sidebar** | Upload documents · Browse and filter by tag · Export or delete the corpus (inside the Upload card) |
 | **Centre — Library** | All your documents, with full-text search and sort controls |
 | **Right — Reader** | Click a document title to read it and annotate passages |
 
@@ -23,7 +23,8 @@ You can:
 - **Browse by tag** — click a tag in the sidebar to filter the library to matching documents
 - **Tag documents** — click `+ tag` on any document row to label it; click `×` on a tag to remove it
 - **Annotate passages** — select any text in the Reader to attach a category tag and an optional note
-- **Edit annotations** — click the pencil icon on any annotation to revise it
+- **Edit annotations** — click the pencil icon on any annotation to revise or delete it
+- **Active document** — the open document is highlighted in the Library so you always know where you are
 - **Annotations only** — check the toggle in the Reader to hide the document body and focus on your annotations
 
 All data is stored in a single file (`keel.db`) on your computer. Nothing leaves your machine unless you choose to enable cloud sync.
@@ -165,7 +166,7 @@ Tags from the sidebar also include tags that were extracted from `==highlighted 
 Annotations let you attach a category tag and an optional note to any passage in a document — like highlighting and commenting in a PDF reader, but stored in a searchable database.
 
 **Creating an annotation:**
-Open a document in the Reader by clicking its title. Select any passage of text with your mouse. A small toolbar appears — type a tag, optionally add a note, then click **Annotate** (or press Enter).
+Open a document in the Reader by clicking its title. Select any passage of text with your mouse. A panel appears at the top of the Reader — type a tag (required), optionally add a note, then click **Annotate** (or press Enter). Tab moves between the tag and note fields; Escape cancels.
 
 **Viewing annotations:**
 Annotated passages are highlighted in the document in a colour that corresponds to their tag. The full list of annotations appears below the document text, each card showing the passage, tag, and note.
