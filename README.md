@@ -59,8 +59,21 @@ Web interface running at http://localhost:3000
 Open **http://localhost:3000** in your browser. The app is running.
 
 > **To stop the app:** go back to the Terminal and press `Ctrl + C`.
->
-> **To start it again later:** open Terminal, type `cd Keel` then `npm run web`.
+
+---
+
+## Starting Keel after installation
+
+Open Terminal and type these two commands:
+
+```
+cd Keel
+npm run web
+```
+
+Then open **http://localhost:3000** in your browser.
+
+---
 
 ---
 
