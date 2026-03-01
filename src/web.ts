@@ -1023,6 +1023,137 @@ app.get('/api/tags/:tag/highlights', (req: any, res: any) => {
 });
 
 // ---------------------------------------------------------------------------
+// Analysis endpoints — Phase 4 research tools
+// ---------------------------------------------------------------------------
+
+// GET /api/analysis/kwic?q=term&window=100
+// KWIC (Key Word In Context) concordance — returns every occurrence of a term
+// across the corpus with surrounding context characters.
+app.get('/api/analysis/kwic', (req: any, res: any) => {
+  const term   = String(req.query.q ?? '').trim();
+  const window = Math.min(200, Math.max(20, parseInt(String(req.query.window ?? '100'), 10)));
+  if (!term) return res.json([]);
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare(
+        'SELECT id, title, publication_date, content FROM corpus_documents'
+      ).all() as { id: string; title: string; publication_date: string; content: string }[];
+
+      const results: { doc_id: string; doc_title: string; doc_date: string; left: string; match: string; right: string }[] = [];
+      const termLower = term.toLowerCase();
+
+      outer: for (const doc of docs) {
+        const content = doc.content || '';
+        const lower   = content.toLowerCase();
+        let idx = 0;
+        while (true) {
+          const pos = lower.indexOf(termLower, idx);
+          if (pos === -1) break;
+          results.push({
+            doc_id:    doc.id,
+            doc_title: doc.title,
+            doc_date:  doc.publication_date,
+            left:      content.slice(Math.max(0, pos - window), pos),
+            match:     content.slice(pos, pos + term.length),
+            right:     content.slice(pos + term.length, Math.min(content.length, pos + term.length + window)),
+          });
+          idx = pos + 1;
+          if (results.length >= 200) break outer;
+        }
+      }
+      res.json(results);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/analysis/cooccurrence
+// Tag co-occurrence — which tag pairs appear together on the same document.
+// Counts are based on doc.tags JSON column (includes propagated annotation tags).
+app.get('/api/analysis/cooccurrence', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare('SELECT id, tags FROM corpus_documents').all() as { id: string; tags: string }[];
+      const pairCounts = new Map<string, number>();
+
+      for (const doc of docs) {
+        let tags: string[] = [];
+        try { tags = [...new Set(JSON.parse(doc.tags || '[]') as string[])]; } catch { continue; }
+        for (let i = 0; i < tags.length; i++) {
+          for (let j = i + 1; j < tags.length; j++) {
+            const key = [tags[i], tags[j]].sort().join('\0');
+            pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+          }
+        }
+      }
+
+      const pairs = [...pairCounts.entries()]
+        .map(([key, count]) => { const [a, b] = key.split('\0'); return { tag_a: a, tag_b: b, count }; })
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 60);
+
+      res.json(pairs);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// GET /api/analysis/timeline
+// Document timeline — docs with publication date, annotation count, dominant tag.
+app.get('/api/analysis/timeline', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const docs = db.prepare(`
+        SELECT id, title, author, publication_date, tags
+        FROM corpus_documents
+        WHERE publication_date IS NOT NULL AND publication_date != ''
+        ORDER BY publication_date ASC
+      `).all() as { id: string; title: string; author: string; publication_date: string; tags: string }[];
+
+      const annRows = db.prepare(`
+        SELECT document_id, tag, COUNT(*) AS n
+        FROM corpus_annotations
+        WHERE author_type = 'human' AND tag IS NOT NULL
+        GROUP BY document_id, tag
+      `).all() as { document_id: string; tag: string; n: number }[];
+
+      // Build per-doc annotation count + dominant tag
+      const annMap = new Map<string, { count: number; tagCounts: Map<string, number> }>();
+      for (const row of annRows) {
+        if (!annMap.has(row.document_id)) annMap.set(row.document_id, { count: 0, tagCounts: new Map() });
+        const e = annMap.get(row.document_id)!;
+        e.count += row.n;
+        e.tagCounts.set(row.tag, (e.tagCounts.get(row.tag) ?? 0) + row.n);
+      }
+
+      const result = docs.map(doc => {
+        const ann = annMap.get(doc.id);
+        let docTags: string[] = [];
+        try { docTags = JSON.parse(doc.tags || '[]'); } catch { /* */ }
+        const dominantTag = ann?.tagCounts.size
+          ? [...ann.tagCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+          : (docTags[0] ?? null);
+        return {
+          id: doc.id, title: doc.title, author: doc.author,
+          publication_date: doc.publication_date,
+          annotation_count: ann?.count ?? 0,
+          dominant_tag: dominantTag,
+        };
+      });
+
+      res.json(result);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Strip inline markup migration
 // ---------------------------------------------------------------------------
 

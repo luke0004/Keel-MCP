@@ -369,6 +369,53 @@
 
     /* ── Active document in corpus list ── */
     .doc-card.doc-active { background: #eeefff; }
+
+    /* ── Viewer / Research tabs ── */
+    .tab-btn {
+      padding: 0.28rem 0.8rem;
+      border: 1px solid #dde1ea;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      background: white;
+      color: #888;
+      font-family: inherit;
+      font-weight: 500;
+      transition: background .12s, color .12s;
+    }
+    .tab-btn.tab-active { background: #5c6bc0; color: white; border-color: #5c6bc0; }
+    .tab-btn:hover:not(.tab-active) { background: #eef0fb; color: #3f51b5; border-color: #c5cae9; }
+
+    /* ── Analysis sub-tabs ── */
+    .ana-tab {
+      padding: 0.16rem 0.55rem;
+      border: 1px solid #dde1ea;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      background: white;
+      color: #888;
+      font-family: inherit;
+    }
+    .ana-tab.ana-active { background: #eef0fb; color: #3f51b5; border-color: #9fa8da; font-weight: 600; }
+    .ana-tab:hover:not(.ana-active) { background: #f5f6ff; }
+
+    /* ── KWIC concordance ── */
+    .kwic-row {
+      display: flex; border-bottom: 1px solid #f5f5f5;
+      padding: 0.12rem 0; align-items: baseline; cursor: pointer;
+    }
+    .kwic-row:hover { background: #fafbff; }
+    .kwic-left  { text-align: right; color: #bbb; flex: 0 0 36%; overflow: hidden;
+                  white-space: nowrap; text-overflow: ellipsis; direction: rtl;
+                  padding-right: 0.3rem; font-size: 0.78rem; font-family: monospace; }
+    .kwic-match { font-weight: 700; color: #3f51b5; white-space: nowrap; flex-shrink: 0;
+                  font-size: 0.78rem; font-family: monospace; }
+    .kwic-right { color: #bbb; flex: 1; overflow: hidden; white-space: nowrap;
+                  text-overflow: ellipsis; padding-left: 0.3rem;
+                  font-size: 0.78rem; font-family: monospace; }
+    .kwic-meta  { font-size: 0.67rem; color: #ccc; flex-shrink: 0; white-space: nowrap;
+                  padding-left: 0.45rem; }
   </style>
 </head>
 <body>
@@ -453,6 +500,12 @@
     </div>
     <div class="search-row">
       <input type="search" id="searchInput" placeholder="Search documents…">
+      <span style="color:#ccc; font-size:0.72rem; flex-shrink:0; align-self:center; white-space:nowrap">Year</span>
+      <input type="text" id="dateFrom" placeholder="from"
+             style="width:50px; flex:0 0 auto; padding:0.48rem 0.4rem; text-align:center">
+      <span style="color:#ccc; align-self:center; flex-shrink:0">–</span>
+      <input type="text" id="dateTo" placeholder="to"
+             style="width:44px; flex:0 0 auto; padding:0.48rem 0.4rem; text-align:center">
       <button id="searchBtn" class="btn-sm">Search</button>
     </div>
     <select id="sortSelect" class="sort-select" title="Sort order">
@@ -477,16 +530,23 @@
 </div>
 </div><!-- /col-corpus -->
 
-<!-- ── Right: document viewer ── -->
+<!-- ── Right: document viewer / analysis ── -->
 <div class="col-viewer">
 <div class="card viewer-card">
-  <div style="flex-shrink:0; display:flex; align-items:center; justify-content:space-between">
-    <h2 style="margin:0">Document</h2>
-    <label style="font-size:0.78rem; color:#888; display:flex; align-items:center;
-                  gap:0.35rem; cursor:pointer; font-weight:normal">
+
+  <!-- Tab bar -->
+  <div style="flex-shrink:0; display:flex; align-items:center; justify-content:space-between; margin-bottom:0.55rem">
+    <div style="display:flex; gap:0.25rem">
+      <button id="tabDocument" class="tab-btn tab-active" onclick="switchTab('document')">Document</button>
+      <button id="tabAnalysis" class="tab-btn" onclick="switchTab('analysis')">Research</button>
+    </div>
+    <label id="annotationsOnlyWrap" style="font-size:0.78rem; color:#888; display:flex;
+                  align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal">
       <input type="checkbox" id="annotationsOnlyToggle"> Annotations only
     </label>
   </div>
+
+  <!-- Pending annotation panel -->
   <div id="pending-annotation" hidden style="flex-shrink:0; margin-bottom:0.5rem">
     <div style="background:#f5f6ff; border:1px solid #c5cae9; border-radius:8px;
                 padding:0.55rem 0.8rem; display:flex; flex-direction:column; gap:0.35rem">
@@ -515,9 +575,49 @@
       </div>
     </div>
   </div>
+
+  <!-- Document viewer -->
   <div id="viewerContent">
     <p class="viewer-placeholder">Click a document title to read it here.</p>
   </div>
+
+  <!-- Analysis panel (hidden until Research tab is active) -->
+  <div id="analysisPanel" style="display:none; flex-direction:column; flex:1; min-height:0; overflow:hidden">
+
+    <!-- Sub-tabs -->
+    <div style="display:flex; gap:0.3rem; margin-bottom:0.8rem; flex-shrink:0">
+      <button class="ana-tab ana-active" id="anaTabKwic"     onclick="showAnalysis('kwic')">KWIC</button>
+      <button class="ana-tab"            id="anaTabCooc"     onclick="showAnalysis('cooc')">Co-occurrence</button>
+      <button class="ana-tab"            id="anaTabTimeline" onclick="showAnalysis('timeline')">Timeline</button>
+    </div>
+
+    <!-- KWIC concordance -->
+    <div id="anaPanelKwic" style="display:flex; flex-direction:column; flex:1; min-height:0">
+      <div style="display:flex; gap:0.4rem; margin-bottom:0.6rem; flex-shrink:0">
+        <input id="kwicInput" type="text" placeholder="Key word in context…" style="flex:1">
+        <button id="kwicBtn" class="btn-sm">Find</button>
+      </div>
+      <div id="kwicResults" style="flex:1; overflow-y:auto; min-height:0">
+        <span style="color:#ccc; font-size:0.83rem">Enter a term to search across the full corpus.</span>
+      </div>
+    </div>
+
+    <!-- Tag co-occurrence -->
+    <div id="anaPanelCooc" style="display:none; flex:1; overflow-y:auto; min-height:0">
+      <div id="coocResults" style="padding-bottom:1rem">
+        <span style="color:#ccc; font-size:0.83rem">Loading…</span>
+      </div>
+    </div>
+
+    <!-- Document timeline -->
+    <div id="anaPanelTimeline" style="display:none; flex:1; overflow-y:auto; min-height:0">
+      <div id="timelineResults" style="padding-bottom:1rem">
+        <span style="color:#ccc; font-size:0.83rem">Loading…</span>
+      </div>
+    </div>
+
+  </div><!-- /analysisPanel -->
+
 </div>
 </div><!-- /col-viewer -->
 
@@ -540,6 +640,8 @@ function parseTags(raw) {
 
 let activeTagFilter      = null;
 let activeSearchQuery    = null;
+let activeDateFrom       = '';     // year filter lower bound (e.g. '1800')
+let activeDateTo         = '';     // year filter upper bound (e.g. '1850')
 let currentDocId         = null;   // document currently open in the viewer
 let currentDocContent    = null;   // raw content string of that document
 let showAnnotationsOnly  = false;
@@ -547,6 +649,11 @@ let currentSort          = 'date-asc';
 let reselectAnnId        = null;   // annotation being re-selected (Option C)
 let reselectTag          = '';
 let reselectNote         = '';
+let activeViewerTab      = 'document';   // 'document' | 'analysis'
+let activeAnalysisTab    = 'kwic';       // 'kwic' | 'cooc' | 'timeline'
+let coocLoaded           = false;
+let timelineLoaded       = false;
+let timelineDocs         = {};
 
 // ── File selection & upload ───────────────────────────────────────────────────
 
@@ -641,6 +748,8 @@ document.getElementById('uploadForm').addEventListener('submit', async e => {
 // ── Corpus view ───────────────────────────────────────────────────────────────
 
 async function refreshCorpus() {
+  coocLoaded = false;
+  timelineLoaded = false;
   await Promise.all([loadDocuments(), loadTagSummary()]);
 }
 
@@ -693,6 +802,17 @@ function sortDocs(docs) {
 function renderDocList(docs, hasSnippets) {
   const list    = document.getElementById('docList');
   const countEl = document.getElementById('docCount');
+
+  // Apply client-side date range filter
+  if (activeDateFrom || activeDateTo) {
+    docs = docs.filter(doc => {
+      const year = String(doc.publication_date || '').trim().slice(0, 4);
+      if (!year || year.length < 4) return false;
+      if (activeDateFrom && year < activeDateFrom) return false;
+      if (activeDateTo   && year > activeDateTo)   return false;
+      return true;
+    });
+  }
 
   if (!docs.length) {
     const msg = activeSearchQuery ? 'No documents match your search.'
@@ -896,7 +1016,11 @@ async function doSearch() {
 function clearFilter() {
   activeSearchQuery = null;
   activeTagFilter   = null;
+  activeDateFrom    = '';
+  activeDateTo      = '';
   document.getElementById('searchInput').value = '';
+  document.getElementById('dateFrom').value    = '';
+  document.getElementById('dateTo').value      = '';
   updateFilterBar();
   loadDocuments();
   loadTagSummary();
@@ -905,15 +1029,18 @@ function clearFilter() {
 function updateFilterBar() {
   const bar   = document.getElementById('filterBar');
   const label = document.getElementById('filterLabel');
-  if (activeSearchQuery) {
-    bar.style.display   = '';
-    label.textContent   = `Search: "${activeSearchQuery}"`;
-  } else if (activeTagFilter) {
-    bar.style.display   = '';
-    label.textContent   = `Tag: #${activeTagFilter}`;
+  const parts = [];
+  if (activeSearchQuery) parts.push(`Search: "${activeSearchQuery}"`);
+  if (activeTagFilter)   parts.push(`Tag: #${activeTagFilter}`);
+  if (activeDateFrom || activeDateTo) {
+    parts.push(`Date: ${activeDateFrom || '…'}–${activeDateTo || '…'}`);
+  }
+  if (parts.length) {
+    bar.style.display = '';
+    label.textContent = parts.join(' · ');
   } else {
-    bar.style.display   = 'none';
-    label.textContent   = '';
+    bar.style.display = 'none';
+    label.textContent = '';
   }
 }
 
@@ -927,6 +1054,19 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
   if (e.key === 'Escape') clearFilter();
 });
+
+function applyDateFilter() {
+  activeDateFrom = document.getElementById('dateFrom').value.trim();
+  activeDateTo   = document.getElementById('dateTo').value.trim();
+  updateFilterBar();
+  loadDocuments();
+}
+for (const id of ['dateFrom', 'dateTo']) {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') applyDateFilter();
+  });
+  document.getElementById(id).addEventListener('blur', applyDateFilter);
+}
 
 // ── Tag browser (sidebar) ─────────────────────────────────────────────────────
 
@@ -1471,6 +1611,231 @@ document.getElementById('annotationsOnlyToggle').addEventListener('change', e =>
   showAnnotationsOnly = e.target.checked;
   if (currentDocId) viewDocument(currentDocId);
 });
+
+// ── Viewer / Analysis tab switching ───────────────────────────────────────────
+
+function switchTab(tab) {
+  activeViewerTab = tab;
+  const isDoc = tab === 'document';
+  document.getElementById('viewerContent').style.display            = isDoc ? '' : 'none';
+  document.getElementById('analysisPanel').style.display            = isDoc ? 'none' : 'flex';
+  document.getElementById('annotationsOnlyWrap').style.display      = isDoc ? '' : 'none';
+  if (!isDoc) document.getElementById('pending-annotation').hidden  = true;
+  document.getElementById('tabDocument').classList.toggle('tab-active', isDoc);
+  document.getElementById('tabAnalysis').classList.toggle('tab-active', !isDoc);
+  if (!isDoc) showAnalysis(activeAnalysisTab);
+}
+
+function showAnalysis(tab) {
+  activeAnalysisTab = tab;
+  const panels = { kwic: ['anaPanelKwic', 'flex'], cooc: ['anaPanelCooc', 'block'], timeline: ['anaPanelTimeline', 'block'] };
+  const tabIds  = { kwic: 'anaTabKwic', cooc: 'anaTabCooc', timeline: 'anaTabTimeline' };
+  for (const [t, [panelId, display]] of Object.entries(panels)) {
+    const el = document.getElementById(panelId);
+    if (el) el.style.display = t === tab ? display : 'none';
+    document.getElementById(tabIds[t])?.classList.toggle('ana-active', t === tab);
+  }
+  if (tab === 'cooc'     && !coocLoaded)     { loadCooccurrence(); coocLoaded = true; }
+  if (tab === 'timeline' && !timelineLoaded) { loadTimeline();     timelineLoaded = true; }
+}
+
+// ── KWIC concordance ──────────────────────────────────────────────────────────
+
+document.getElementById('kwicBtn').addEventListener('click', runKwic);
+document.getElementById('kwicInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runKwic();
+});
+document.getElementById('kwicResults').addEventListener('click', e => {
+  const row = e.target.closest('[data-view-doc]');
+  if (row) { switchTab('document'); viewDocument(row.dataset.viewDoc); }
+});
+
+async function runKwic() {
+  const term    = document.getElementById('kwicInput').value.trim();
+  const results = document.getElementById('kwicResults');
+  if (!term) return;
+  results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Searching…</span>';
+  try {
+    const data = await fetch('/api/analysis/kwic?q=' + encodeURIComponent(term)).then(r => r.json());
+    if (!data.length) {
+      results.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No occurrences found.</span>';
+      return;
+    }
+    const header = `<div style="font-size:0.72rem; color:#bbb; margin-bottom:0.4rem; flex-shrink:0">${data.length}${data.length >= 200 ? '+' : ''} occurrence${data.length !== 1 ? 's' : ''}</div>`;
+    const rows = data.map(r =>
+      `<div class="kwic-row" data-view-doc="${escapeHtml(r.doc_id)}">
+        <div class="kwic-left">${escapeHtml(r.left)}</div>
+        <div class="kwic-match">${escapeHtml(r.match)}</div>
+        <div class="kwic-right">${escapeHtml(r.right)}</div>
+        <div class="kwic-meta">${escapeHtml(r.doc_date || '')}</div>
+      </div>`
+    ).join('');
+    results.innerHTML = header + rows;
+  } catch (err) {
+    results.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// ── Tag co-occurrence ─────────────────────────────────────────────────────────
+
+async function loadCooccurrence() {
+  const container = document.getElementById('coocResults');
+  container.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Loading…</span>';
+  try {
+    const pairs = await fetch('/api/analysis/cooccurrence').then(r => r.json());
+    if (!pairs.length) {
+      container.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No co-occurring tags yet. Tag multiple concepts per document to see pairs here.</span>';
+      return;
+    }
+    const max = pairs[0].count;
+    container.innerHTML = `
+      <div style="font-size:0.72rem; color:#bbb; margin-bottom:0.55rem">${pairs.length} tag pair${pairs.length !== 1 ? 's' : ''} across corpus</div>
+      ${pairs.map(p => {
+        const pct   = Math.max(3, Math.round(p.count / max * 100));
+        const colA  = tagColor(p.tag_a);
+        const colB  = tagColor(p.tag_b);
+        return `
+          <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.35rem">
+            <div style="font-size:0.78rem; color:#444; white-space:nowrap; flex:0 0 auto">
+              <span style="background:${colA}; border-radius:3px; padding:1px 5px">#${escapeHtml(p.tag_a)}</span>
+              <span style="color:#ccc; margin:0 0.2rem">×</span>
+              <span style="background:${colB}; border-radius:3px; padding:1px 5px">#${escapeHtml(p.tag_b)}</span>
+            </div>
+            <div style="flex:1; height:4px; background:#eef0f5; border-radius:3px; overflow:hidden; min-width:0">
+              <div style="width:${pct}%; height:100%; background:#9fa8da; border-radius:3px"></div>
+            </div>
+            <span style="font-size:0.72rem; color:#bbb; flex-shrink:0">${p.count}</span>
+          </div>`;
+      }).join('')}`;
+  } catch (err) {
+    container.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+// ── Document timeline ─────────────────────────────────────────────────────────
+
+async function loadTimeline() {
+  const container = document.getElementById('timelineResults');
+  container.innerHTML = '<span style="color:#ccc; font-size:0.83rem">Loading…</span>';
+  try {
+    const docs = await fetch('/api/analysis/timeline').then(r => r.json());
+    if (!docs.length) {
+      container.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No dated documents in corpus. Add publication dates to enable the timeline.</span>';
+      return;
+    }
+
+    timelineDocs = {};
+    docs.forEach(d => { timelineDocs[d.id] = d; });
+
+    const getYear = d => parseInt((d.publication_date || '').slice(0, 4), 10);
+    const validDocs = docs.filter(d => !isNaN(getYear(d)));
+    if (!validDocs.length) {
+      container.innerHTML = '<span style="color:#ccc; font-size:0.83rem">No documents with parseable publication years.</span>';
+      return;
+    }
+
+    const years  = validDocs.map(getYear);
+    const minY   = Math.min(...years), maxY = Math.max(...years);
+    const range  = maxY - minY || 1;
+    const maxAnn = Math.max(...docs.map(d => d.annotation_count), 1);
+
+    const W = 640, H = 180, padL = 36, padR = 14, padT = 16, padB = 26;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const midY  = padT + plotH / 2;
+
+    function xFor(y) { return padL + (y - minY) / range * plotW; }
+    function rFor(n) { return 5 + Math.sqrt(n / maxAnn) * 11; }
+    function yJitter(id) {
+      let h = 0;
+      for (const c of id) { h = ((h << 5) - h) + c.charCodeAt(0); h |= 0; }
+      return (Math.abs(h) % 36) - 18;
+    }
+
+    const tickStep  = range <= 10 ? 1 : range <= 50 ? 5 : range <= 150 ? 10 : 25;
+    const firstTick = Math.ceil(minY / tickStep) * tickStep;
+    const ticks     = [];
+    for (let y = firstTick; y <= maxY; y += tickStep) ticks.push(y);
+
+    const axisY   = padT + plotH;
+    const tickSvg = ticks.map(y => {
+      const x = xFor(y).toFixed(1);
+      return `<line x1="${x}" y1="${axisY}" x2="${x}" y2="${axisY + 4}" stroke="#dde1ea" stroke-width="1"/>
+              <text x="${x}" y="${axisY + 14}" text-anchor="middle" font-size="9" fill="#bbb">${y}</text>`;
+    }).join('');
+
+    const circleSvg = validDocs.map(d => {
+      const cx  = xFor(getYear(d)).toFixed(1);
+      const cy  = (midY + yJitter(d.id)).toFixed(1);
+      const r   = rFor(d.annotation_count).toFixed(1);
+      const col = tagColor(d.dominant_tag).replace('0.55)', '0.82)');
+      return `<circle class="tl-dot" cx="${cx}" cy="${cy}" r="${r}"
+                      fill="${col}" stroke="white" stroke-width="1.5"
+                      data-doc-id="${escapeHtml(d.id)}" style="cursor:pointer"/>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div style="position:relative">
+        <svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible; display:block">
+          <line x1="${padL}" y1="${axisY}" x2="${W - padR}" y2="${axisY}" stroke="#dde1ea" stroke-width="1"/>
+          ${tickSvg}
+          ${circleSvg}
+        </svg>
+        <div id="timelineTip"
+             style="display:none; position:absolute; background:white; border:1px solid #dde1ea;
+                    border-radius:6px; padding:0.45rem 0.65rem; font-size:0.78rem; color:#333;
+                    pointer-events:none; box-shadow:0 2px 8px rgba(0,0,0,0.1);
+                    max-width:200px; z-index:10; line-height:1.45"></div>
+      </div>
+      <div style="font-size:0.71rem; color:#bbb; margin-top:0.35rem; padding-left:${padL}px">
+        ${validDocs.length} document${validDocs.length !== 1 ? 's' : ''}
+        · dot size = annotation count
+        ${maxY > minY ? ` · ${minY}–${maxY}` : ''}
+      </div>`;
+
+    // Attach hover/click after DOM insertion
+    container.querySelectorAll('.tl-dot').forEach(dot => {
+      dot.addEventListener('mouseenter', e => {
+        const d   = timelineDocs[dot.getAttribute('data-doc-id')];
+        const tip = document.getElementById('timelineTip');
+        if (!d || !tip) return;
+        tip.innerHTML = `
+          <strong style="display:block; font-size:0.8rem; margin-bottom:0.15rem">${escapeHtml(d.title)}</strong>
+          <div style="color:#aaa">${escapeHtml(d.publication_date || '?')}</div>
+          ${d.annotation_count
+            ? `<div style="color:#7986cb; margin-top:0.1rem">${d.annotation_count} annotation${d.annotation_count !== 1 ? 's' : ''}</div>`
+            : '<div style="color:#ccc">no annotations</div>'}
+          ${d.dominant_tag ? `<div style="color:#bbb; font-size:0.71rem; margin-top:0.1rem">#${escapeHtml(d.dominant_tag)}</div>` : ''}`;
+        tip.style.display = 'block';
+        positionTimelineTip(e);
+      });
+      dot.addEventListener('mousemove', e => positionTimelineTip(e));
+      dot.addEventListener('mouseleave', () => {
+        const tip = document.getElementById('timelineTip');
+        if (tip) tip.style.display = 'none';
+      });
+      dot.addEventListener('click', () => {
+        switchTab('document');
+        viewDocument(dot.getAttribute('data-doc-id'));
+      });
+    });
+
+  } catch (err) {
+    container.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+function positionTimelineTip(e) {
+  const tip = document.getElementById('timelineTip');
+  if (!tip) return;
+  const rect = tip.parentElement.getBoundingClientRect();
+  let x = e.clientX - rect.left + 14;
+  let y = e.clientY - rect.top  - 10;
+  if (x + 210 > rect.width) x = e.clientX - rect.left - 215;
+  if (y < 0) y = 4;
+  tip.style.left = x + 'px';
+  tip.style.top  = y + 'px';
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
