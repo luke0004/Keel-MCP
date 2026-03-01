@@ -326,7 +326,8 @@
     .cat-section { margin-bottom: 0.6rem; }
     .cat-header  { display:flex; align-items:center; gap:0.35rem; padding:0.2rem 0.4rem;
                    border-radius:6px; cursor:pointer; user-select:none;
-                   font-size:0.8rem; font-weight:600; color:#555; }
+                   font-size:0.8rem; font-weight:600; color:#555;
+                   width:100%; border:none; background:none; text-align:left; font-family:inherit; }
     .cat-header:hover { background:#f4f5f9; }
     .cat-color-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
     .cat-header-label { flex:1; }
@@ -1250,12 +1251,12 @@ function renderTagBrowser(tags, categories) {
     const cid = escapeHtml(cat.id);
     const cname = escapeHtml(JSON.stringify(cat.name));
     html += `<div class="cat-section">`;
-    html += `<div class="cat-header" onclick="openCategoryEditor('${cid}')">
+    html += `<button class="cat-header" onclick="openCategoryEditor('${cid}')">
       <span class="cat-header-label">${escapeHtml(cat.name)}</span>
       <div class="cat-header-actions">
         <button onclick="event.stopPropagation();confirmDeleteCat('${cid}',${cname})" title="Delete category">🗑</button>
       </div>
-    </div>`;
+    </button>`;
     html += `<div class="cat-body">`;
     for (const tag of cat.tags) {
       const info = tagInfo[tag] || { doc_count: 0 };
@@ -1290,7 +1291,7 @@ function renderTagBrowser(tags, categories) {
   const uncategorized = tags.filter(t => !allCategorizedTags.has(t.tag));
   if (uncategorized.length) {
     html += `<div class="cat-section">`;
-    html += `<div class="cat-header">
+    html += `<div class="cat-header" style="cursor:default">
       <span class="cat-header-label">Uncategorized</span>
     </div>`;
     html += `<div class="cat-body">`;
@@ -1509,7 +1510,9 @@ async function confirmDeleteCat(catId, name) {
 let activeCatEditorId = null;
 
 function openCategoryEditor(catId) {
+  console.log('[cat] openCategoryEditor called, catId:', catId, 'categoriesData.length:', categoriesData.length);
   const cat = categoriesData.find(c => c.id === catId);
+  console.log('[cat] cat found:', cat ? cat.name : 'NOT FOUND');
   if (!cat) return;
   activeCatEditorId = catId;
 
