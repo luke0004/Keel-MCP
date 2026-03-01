@@ -176,7 +176,7 @@ Click the pencil icon **✎** on any annotation card to open an edit form. You c
 - Change the **tag** or **note** directly in the form
 - Read the **context strip** — the text immediately before and after the passage, shown in grey above the text area, so you can see the boundaries of the selection
 - Click **↩ Re-select passage** to return to the document and select a new passage; the toolbar re-opens pre-filled with the existing tag and note, and saving replaces the old passage
-- Click **🗑 Delete** to remove the annotation and clear its highlight from the document; the source text is not affected
+- Click **🗑 Delete** to remove the annotation and clear its highlight from the document; if no other annotation on the document uses the same tag, the tag is also removed from the document card and the Browse by Tag sidebar; the source text is not affected
 
 **Annotations only view:**
 Check the **Annotations only** box in the top-right corner of the Reader to hide the document body and show only your annotation list. Useful when reviewing and comparing notes across a long text. The setting persists as you navigate between documents.
