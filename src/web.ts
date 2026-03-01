@@ -1030,8 +1030,8 @@ app.get('/api/tags/:tag/highlights', (req: any, res: any) => {
 // KWIC (Key Word In Context) concordance — returns every occurrence of a term
 // across the corpus with surrounding context characters.
 app.get('/api/analysis/kwic', (req: any, res: any) => {
-  const term   = String(req.query.q ?? '').trim();
-  const window = Math.min(200, Math.max(20, parseInt(String(req.query.window ?? '100'), 10)));
+  const term      = String(req.query.q ?? '').trim();
+  const ctxWindow = Math.min(200, Math.max(20, parseInt(String(req.query.window ?? '100'), 10)));
   if (!term) return res.json([]);
   try {
     const db = getDB();
@@ -1054,9 +1054,9 @@ app.get('/api/analysis/kwic', (req: any, res: any) => {
             doc_id:    doc.id,
             doc_title: doc.title,
             doc_date:  doc.publication_date,
-            left:      content.slice(Math.max(0, pos - window), pos),
+            left:      content.slice(Math.max(0, pos - ctxWindow), pos),
             match:     content.slice(pos, pos + term.length),
-            right:     content.slice(pos + term.length, Math.min(content.length, pos + term.length + window)),
+            right:     content.slice(pos + term.length, Math.min(content.length, pos + term.length + ctxWindow)),
           });
           idx = pos + 1;
           if (results.length >= 200) break outer;
@@ -1219,8 +1219,8 @@ app.get('/api/analysis/termfreq', (req: any, res: any) => {
 // ---------------------------------------------------------------------------
 
 app.get('/api/analysis/collocates', (req: any, res: any) => {
-  const term   = String(req.query.q ?? '').trim();
-  const window = Math.min(10, Math.max(2, parseInt(String(req.query.window ?? '5'), 10)));
+  const term      = String(req.query.q ?? '').trim();
+  const ctxWindow = Math.min(10, Math.max(2, parseInt(String(req.query.window ?? '5'), 10)));
   if (!term) return res.json([]);
   try {
     const db = getDB();
