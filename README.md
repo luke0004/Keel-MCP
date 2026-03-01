@@ -230,4 +230,6 @@ See [`roadmap.md`](roadmap.md) for the full feature roadmap and architectural pl
 
 ## License
 
-All rights reserved.
+[PolyForm Noncommercial 1.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)
+
+Free to use, modify, and share for personal, academic, and other noncommercial purposes. Commercial use requires a separate agreement.
