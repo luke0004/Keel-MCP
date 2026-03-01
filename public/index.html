@@ -327,6 +327,7 @@
     .cat-header  { display:flex; align-items:center; gap:0.35rem; padding:0.2rem 0.4rem;
                    border-radius:6px; cursor:pointer; user-select:none;
                    font-size:0.8rem; font-weight:600; color:#555; }
+    .cat-arrow   { font-size:0.6rem; color:#bbb; flex-shrink:0; width:0.7rem; text-align:center; }
     .cat-header:hover { background:#f4f5f9; }
     .cat-color-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
     .cat-header-label { flex:1; }
@@ -354,6 +355,19 @@
     .new-cat-btn { background:none; border:1px solid #c5cae9; border-radius:4px;
                    font-size:0.78rem; color:#7986cb; cursor:pointer; padding:0.2rem 0.45rem; }
     .new-cat-btn:hover { background:#eef0fb; }
+    .cat-editor-back { background:none; border:none; cursor:pointer; font-size:0.82rem;
+                       color:#7986cb; padding:0.1rem 0.3rem 0.1rem 0; font-weight:600; }
+    .cat-editor-back:hover { text-decoration:underline; }
+    .cat-editor-name-input { flex:1; font-size:1rem; font-weight:700; color:#333; border:none;
+                              border-bottom:2px solid #c5cae9; background:none; outline:none;
+                              padding:0.1rem 0; min-width:0; font-family:inherit; }
+    .cat-editor-name-input:focus { border-bottom-color:#7986cb; }
+    .cat-tag-chip { display:inline-flex; align-items:center; gap:0.3rem; padding:0.25rem 0.55rem;
+                    border-radius:20px; border:2px solid #e8eaf6; cursor:pointer;
+                    font-size:0.82rem; color:#555; background:#f9f9fb;
+                    transition:background .1s, border-color .1s; user-select:none; }
+    .cat-tag-chip.in-cat { background:#eef0fb; border-color:#7986cb; color:#3f51b5; font-weight:600; }
+    .cat-tag-chip:hover { border-color:#9fa8da; }
 
     /* ── Inline markup (==highlight== and #tag in viewer) ── */
     mark.inline-hl { background: #fff9c4; border-radius: 2px; padding: 0 2px; }
@@ -558,6 +572,31 @@
 
 <!-- ── Center: corpus library ── -->
 <div class="col-corpus">
+
+<!-- Category editor (shown instead of library when a category is selected) -->
+<div id="catEditorPanel" class="card corpus-card" style="display:none; overflow:hidden">
+  <div class="corpus-toolbar" style="flex-shrink:0">
+    <div class="corpus-title-area">
+      <button class="cat-editor-back" onclick="closeCategoryEditor()">← Library</button>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem; flex:1; min-width:0">
+      <input type="color" id="catEditorColor" title="Category colour"
+             style="width:28px; height:28px; border:none; background:none; cursor:pointer; padding:0; border-radius:50%; flex-shrink:0"
+             oninput="document.getElementById('catEditorDot').style.background=this.value"
+             onchange="saveCategoryColor()">
+      <span id="catEditorDot" class="cat-color-dot" style="width:10px;height:10px;flex-shrink:0"></span>
+      <input id="catEditorName" class="cat-editor-name-input" type="text" placeholder="Category name"
+             onkeydown="if(event.key==='Enter')this.blur()"
+             onblur="saveCategoryName()">
+    </div>
+    <button class="btn-sm" style="color:#e57373; border-color:#e57373" onclick="deleteCategoryFromEditor()">Delete</button>
+  </div>
+  <div style="flex:1; overflow-y:auto; padding-top:0.5rem">
+    <p style="font-size:0.78rem; color:#aaa; margin:0 0 0.6rem">Check tags to include in this category:</p>
+    <div id="catEditorTagList" style="display:flex; flex-wrap:wrap; gap:0.35rem"></div>
+  </div>
+</div>
+
 <div class="card corpus-card">
 
   <div class="corpus-toolbar">
@@ -1177,8 +1216,15 @@ async function loadTagSummary() {
       fetch('/api/tags/summary').then(r => r.json()),
       fetch('/api/categories').then(r => r.json()),
     ]);
+    window._lastTagSummary = tags;
     categoriesData = categories;
     renderTagBrowser(tags, categories);
+    // If category editor is open, refresh its chip list
+    if (activeCatEditorId) {
+      const cat = categoriesData.find(c => c.id === activeCatEditorId);
+      if (cat) renderCatEditorTags(cat);
+      else closeCategoryEditor();
+    }
   } catch {
     container.innerHTML = '<span class="error" style="font-size:0.82rem">Failed to load tags.</span>';
   }
@@ -1207,10 +1253,11 @@ function renderTagBrowser(tags, categories) {
     const isCollapsed = collapsedCategories.has(cat.id);
     html += `<div class="cat-section">`;
     html += `<div class="cat-header" data-cat-id="${escapeHtml(cat.id)}">
+      <span class="cat-arrow" data-cat-collapse="${escapeHtml(cat.id)}">${isCollapsed ? '▸' : '▾'}</span>
       <span class="cat-color-dot" style="background:${escapeHtml(cat.color)}"></span>
       <span class="cat-header-label">${escapeHtml(cat.name)}</span>
       <div class="cat-header-actions" onclick="event.stopPropagation()">
-        <button class="cat-rename-btn" data-cat-id="${escapeHtml(cat.id)}" data-cat-name="${escapeHtml(cat.name)}" title="Rename category">✎</button>
+        <button class="cat-rename-btn" data-cat-id="${escapeHtml(cat.id)}" title="Edit category">✎</button>
         <button class="cat-delete-btn" data-cat-id="${escapeHtml(cat.id)}" data-cat-name="${escapeHtml(cat.name)}" title="Delete category">🗑</button>
       </div>
     </div>`;
@@ -1250,6 +1297,7 @@ function renderTagBrowser(tags, categories) {
     const isCollapsed = collapsedCategories.has('__uncategorized__');
     html += `<div class="cat-section">`;
     html += `<div class="cat-header" data-cat-id="__uncategorized__">
+      <span class="cat-arrow" data-cat-collapse="__uncategorized__">${isCollapsed ? '▸' : '▾'}</span>
       <span class="cat-color-dot" style="background:#ccc"></span>
       <span class="cat-header-label">Uncategorized</span>
     </div>`;
@@ -1298,22 +1346,33 @@ function renderTagBrowser(tags, categories) {
 }
 
 document.getElementById('tagList').addEventListener('click', async e => {
-  // Category header collapse/expand
-  const catHeader = e.target.closest('.cat-header');
-  if (catHeader && !e.target.closest('.cat-header-actions')) {
-    const catId = catHeader.dataset.catId;
+  // Arrow click → collapse/expand only
+  const collapseArrow = e.target.closest('[data-cat-collapse]');
+  if (collapseArrow) {
+    e.stopPropagation();
+    const catId = collapseArrow.dataset.catCollapse;
     if (collapsedCategories.has(catId)) collapsedCategories.delete(catId);
     else collapsedCategories.add(catId);
+    const nowCollapsed = collapsedCategories.has(catId);
     const body = document.querySelector(`.cat-body[data-cat-body="${CSS.escape(catId)}"]`);
-    if (body) body.classList.toggle('collapsed', collapsedCategories.has(catId));
+    if (body) body.classList.toggle('collapsed', nowCollapsed);
+    collapseArrow.textContent = nowCollapsed ? '▸' : '▾';
     return;
   }
 
-  // Rename category
+  // Category header click (not arrow, not actions) → open editor in center column
+  const catHeader = e.target.closest('.cat-header');
+  if (catHeader && !e.target.closest('.cat-header-actions')) {
+    const catId = catHeader.dataset.catId;
+    if (catId && catId !== '__uncategorized__') openCategoryEditor(catId);
+    return;
+  }
+
+  // Edit button → open category editor
   const catRenameBtn = e.target.closest('.cat-rename-btn');
   if (catRenameBtn) {
     e.stopPropagation();
-    startCategoryEdit(catRenameBtn.dataset.catId, catRenameBtn.dataset.catName);
+    openCategoryEditor(catRenameBtn.dataset.catId);
     return;
   }
 
@@ -1462,40 +1521,6 @@ async function createCategory() {
   } catch (err) { alert('Could not create category: ' + err.message); }
 }
 
-function startCategoryEdit(catId, currentName) {
-  const header = document.querySelector(`.cat-header[data-cat-id="${CSS.escape(catId)}"]`);
-  if (!header) return;
-  const label = header.querySelector('.cat-header-label');
-  if (!label) return;
-  const originalText = label.textContent;
-  label.innerHTML = `<input class="cat-add-input" id="cat-rename-input-${escapeHtml(catId)}"
-    type="text" value="${escapeHtml(currentName)}" style="margin:0; padding:0.1rem 0.3rem;"
-    onclick="event.stopPropagation()">`;
-  const inp = document.getElementById(`cat-rename-input-${catId}`);
-  if (!inp) return;
-  inp.focus(); inp.select();
-  inp.addEventListener('keydown', async ev => {
-    if (ev.key === 'Enter') {
-      ev.preventDefault();
-      const newName = inp.value.trim();
-      if (!newName) { inp.style.borderColor = '#e53935'; return; }
-      try {
-        const r = await fetch('/api/categories/' + encodeURIComponent(catId), {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newName }),
-        });
-        if (!r.ok) throw new Error((await r.json()).error || 'Rename failed');
-        await loadTagSummary();
-      } catch (err) { alert('Could not rename category: ' + err.message); loadTagSummary(); }
-    } else if (ev.key === 'Escape') {
-      loadTagSummary();
-    }
-  });
-  inp.addEventListener('blur', () => setTimeout(() => {
-    if (document.activeElement !== inp) loadTagSummary();
-  }, 200));
-}
 
 async function deleteCategory(catId) {
   try {
@@ -1519,6 +1544,109 @@ async function removeTagFromCategory(catId, tag) {
     if (!r.ok) throw new Error((await r.json()).error || 'Remove failed');
     await loadTagSummary();
   } catch (err) { alert('Could not remove tag from category: ' + err.message); }
+}
+
+// ── Category editor (center column) ──────────────────────────────────────────
+
+let activeCatEditorId = null;
+
+function openCategoryEditor(catId) {
+  const cat = categoriesData.find(c => c.id === catId);
+  if (!cat) return;
+  activeCatEditorId = catId;
+
+  // Switch panels
+  document.querySelector('.col-corpus .corpus-card:not(#catEditorPanel)').style.display = 'none';
+  const panel = document.getElementById('catEditorPanel');
+  panel.style.display = 'flex';
+
+  // Populate header fields
+  const nameInput = document.getElementById('catEditorName');
+  const colorInput = document.getElementById('catEditorColor');
+  const dot = document.getElementById('catEditorDot');
+  nameInput.value = cat.name;
+  colorInput.value = cat.color;
+  dot.style.background = cat.color;
+
+  renderCatEditorTags(cat);
+}
+
+function renderCatEditorTags(cat) {
+  const list = document.getElementById('catEditorTagList');
+  const allTags = window._lastTagSummary || [];
+  list.innerHTML = allTags.map(t => {
+    const inCat = cat.tags.includes(t.tag);
+    return `<span class="cat-tag-chip${inCat ? ' in-cat' : ''}"
+      onclick="toggleTagInCategory('${escapeHtml(cat.id)}','${escapeHtml(t.tag)}')"
+      title="${inCat ? 'Remove from category' : 'Add to category'}">${escapeHtml(t.tag)}</span>`;
+  }).join('');
+}
+
+async function toggleTagInCategory(catId, tag) {
+  const cat = categoriesData.find(c => c.id === catId);
+  if (!cat) return;
+  const inCat = cat.tags.includes(tag);
+  const url = `/api/categories/${encodeURIComponent(catId)}/tags/${encodeURIComponent(tag)}`;
+  try {
+    const r = await fetch(url, { method: inCat ? 'DELETE' : 'POST' });
+    if (!r.ok) throw new Error((await r.json()).error);
+    // Update local state immediately for responsive feel
+    if (inCat) cat.tags = cat.tags.filter(t => t !== tag);
+    else cat.tags = [...cat.tags, tag];
+    renderCatEditorTags(cat);
+    loadTagSummary();
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+async function saveCategoryName() {
+  if (!activeCatEditorId) return;
+  const name = document.getElementById('catEditorName').value.trim();
+  if (!name) return;
+  try {
+    const r = await fetch('/api/categories/' + encodeURIComponent(activeCatEditorId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    const cat = categoriesData.find(c => c.id === activeCatEditorId);
+    if (cat) cat.name = name;
+    loadTagSummary();
+  } catch (err) { alert('Could not rename: ' + err.message); }
+}
+
+async function saveCategoryColor() {
+  if (!activeCatEditorId) return;
+  const color = document.getElementById('catEditorColor').value;
+  try {
+    const r = await fetch('/api/categories/' + encodeURIComponent(activeCatEditorId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ color }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error);
+    const cat = categoriesData.find(c => c.id === activeCatEditorId);
+    if (cat) cat.color = color;
+    loadTagSummary();
+  } catch (err) { alert('Could not update colour: ' + err.message); }
+}
+
+async function deleteCategoryFromEditor() {
+  const cat = categoriesData.find(c => c.id === activeCatEditorId);
+  if (!cat) return;
+  if (!confirm(`Delete category "${cat.name}"?\nTags will not be deleted.`)) return;
+  try {
+    const r = await fetch('/api/categories/' + encodeURIComponent(activeCatEditorId), { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error);
+    closeCategoryEditor();
+    await loadTagSummary();
+  } catch (err) { alert('Could not delete category: ' + err.message); }
+}
+
+function closeCategoryEditor() {
+  activeCatEditorId = null;
+  document.getElementById('catEditorPanel').style.display = 'none';
+  document.querySelector('.col-corpus .corpus-card:not(#catEditorPanel)').style.removeProperty('display');
 }
 
 function browseTag(tag) {
