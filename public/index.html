@@ -366,6 +366,9 @@
       cursor: pointer; padding: 0 0.2rem; font-size: 0.88rem; line-height: 1;
     }
     .btn-edit-ann:hover { color: #5c6bc0; background: none; }
+
+    /* ── Active document in corpus list ── */
+    .doc-card.doc-active { background: #eeefff; }
   </style>
 </head>
 <body>
@@ -415,6 +418,18 @@
       <button type="submit" id="submitBtn">Upload</button>
       <div id="uploadStatus"></div>
     </form>
+    <div style="display:flex; gap:0.4rem; margin-top:0.65rem; padding-top:0.65rem;
+                border-top:1px solid #eef0f5">
+      <button id="exportBtn" class="btn-sm"
+              style="flex:1; font-size:0.75rem; background:#f3f4f6; color:#666;
+                     border:1px solid #ddd; opacity:0.85">
+        Export .zip
+      </button>
+      <button id="deleteAllBtn" class="danger btn-sm"
+              style="flex:1; font-size:0.75rem; opacity:0.75">
+        Delete all
+      </button>
+    </div>
   </details>
 
   <!-- Tag / category browser -->
@@ -423,22 +438,6 @@
     <div id="tagList">
       <span style="color:#ccc; font-size:0.85rem">Loading…</span>
     </div>
-  </div>
-
-  <!-- Export -->
-  <div style="padding: 0 0.2rem 0.5rem; text-align:center">
-    <button id="exportBtn" class="btn-sm"
-            style="font-size:0.76rem; opacity:0.7; width:100%; background:#f3f4f6; color:#555; border:1px solid #ddd">
-      Export corpus (.zip)
-    </button>
-  </div>
-
-  <!-- Danger zone -->
-  <div style="padding: 0 0.2rem 0.5rem; text-align:center">
-    <button id="deleteAllBtn" class="danger btn-sm"
-            style="font-size:0.76rem; opacity:0.65; width:100%">
-      Delete All Documents
-    </button>
   </div>
 
 </div><!-- /col-sidebar -->
@@ -1057,6 +1056,9 @@ function renderAnnotationList(anns) {
 async function viewDocument(docId) {
   currentDocId = docId;
   hidePendingAnnotation();
+  document.querySelectorAll('.doc-card').forEach(el =>
+    el.classList.toggle('doc-active', el.dataset.docId === docId)
+  );
   const panel  = document.getElementById('viewerContent');
   panel.innerHTML = '<span style="color:#ccc; font-size:0.88rem">Loading…</span>';
   try {
@@ -1308,14 +1310,24 @@ function showAnnotationEditForm(annId, tag, note, passage) {
 }
 
 async function saveAnnotationEdit(annId) {
-  const tag     = document.getElementById('edit-ann-tag-'     + annId)?.value.trim() ?? '';
-  const passage = document.getElementById('edit-ann-passage-' + annId)?.value ?? '';
-  const note    = document.getElementById('edit-ann-note-'    + annId)?.value.trim() ?? '';
+  const tagEl     = document.getElementById('edit-ann-tag-'     + annId);
+  const passageEl = document.getElementById('edit-ann-passage-' + annId);
+  const noteEl    = document.getElementById('edit-ann-note-'    + annId);
 
-  const body = {};
-  if (tag)     body.tag = tag.toLowerCase().replace(/\s+/g, '-');
-  if (passage) body.source_passage = passage;
-  if (note)    body.text = note;
+  const tag     = tagEl?.value.trim()     ?? '';
+  const passage = passageEl?.value.trim() ?? '';
+  const note    = noteEl?.value.trim()    ?? '';
+
+  if (!tag) {
+    if (tagEl) { tagEl.style.borderColor = '#e53935'; tagEl.focus(); }
+    return;
+  }
+
+  const body = {
+    tag:  tag.toLowerCase().replace(/\s+/g, '-'),
+    text: note || null,
+    ...(passage && { source_passage: passage }),
+  };
 
   try {
     const r = await fetch('/api/annotations/' + annId, {
@@ -1326,6 +1338,7 @@ async function saveAnnotationEdit(annId) {
     if (!r.ok) throw new Error((await r.json()).error || 'Update failed');
     await viewDocument(currentDocId);
     loadTagSummary();
+    refreshCorpus();
   } catch (err) {
     alert('Could not update annotation: ' + err.message);
   }
