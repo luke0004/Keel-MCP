@@ -246,6 +246,29 @@ function propagateTagToDocument(db: ReturnType<typeof getDB>, docId: unknown, ta
   }
 }
 
+// Removes a tag from doc.tags only when no other annotation on the same
+// document still carries that tag. Used after an annotation tag edit so
+// the old tag doesn't linger on the doc card.
+function pruneTagFromDocumentIfUnused(
+  db: ReturnType<typeof getDB>,
+  docId: unknown,
+  oldTag: string,
+  excludeAnnId: string,
+  now: number,
+) {
+  const still = db.prepare(
+    'SELECT 1 FROM corpus_annotations WHERE document_id = ? AND tag = ? AND id != ? LIMIT 1'
+  ).get(docId, oldTag, excludeAnnId);
+  if (still) return; // another annotation still uses this tag on this doc
+  const doc = db.prepare('SELECT tags FROM corpus_documents WHERE id = ?').get(docId) as { tags: string } | undefined;
+  if (!doc) return;
+  const tags: string[] = JSON.parse(doc.tags || '[]');
+  const next = tags.filter(t => t !== oldTag);
+  if (next.length !== tags.length) {
+    db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(next), now, docId);
+  }
+}
+
 
 app.get('/api/documents/:id/annotations', (req: any, res: any) => {
   try {
@@ -329,8 +352,15 @@ app.patch('/api/annotations/:id', (req: any, res: any) => {
       updates.push('is_dirty = 1', 'updated_at = ?');
       params.push(now, req.params.id);
 
+      const oldTag = ann.tag as string | null;
       db.prepare(`UPDATE corpus_annotations SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-      if (tag !== undefined && tag) propagateTagToDocument(db, ann.document_id, tag, now);
+      if (tag !== undefined && tag) {
+        propagateTagToDocument(db, ann.document_id, tag, now);
+        // Remove old tag from doc.tags if no other annotation on this doc still uses it
+        if (oldTag && oldTag !== tag) {
+          pruneTagFromDocumentIfUnused(db, ann.document_id, oldTag, req.params.id, now);
+        }
+      }
       const updated = db.prepare('SELECT * FROM corpus_annotations WHERE id = ?').get(req.params.id);
       res.json(updated);
     } finally { db.close(); }
