@@ -322,6 +322,39 @@
     .tag-editor-btn.save { color:#388e3c; } .tag-editor-btn.save:hover { background:#e8f5e9; }
     .tag-editor-btn.cancel { color:#aaa; } .tag-editor-btn.cancel:hover { background:#f5f5f5; }
 
+    /* ── Tag categories ── */
+    .cat-section { margin-bottom: 0.6rem; }
+    .cat-header  { display:flex; align-items:center; gap:0.35rem; padding:0.2rem 0.4rem;
+                   border-radius:6px; cursor:pointer; user-select:none;
+                   font-size:0.8rem; font-weight:600; color:#555; }
+    .cat-header:hover { background:#f4f5f9; }
+    .cat-color-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .cat-header-label { flex:1; }
+    .cat-header-actions { display:flex; gap:0.15rem; opacity:0; transition:opacity .15s; }
+    .cat-header:hover .cat-header-actions { opacity:1; }
+    .cat-header-actions button { background:none; border:none; cursor:pointer;
+                                  font-size:0.72rem; color:#aaa; padding:0 0.2rem;
+                                  border-radius:3px; line-height:1.5; }
+    .cat-header-actions button:hover { color:#555; background:#e8eaf0; }
+    .cat-body { padding-left:0.5rem; }
+    .cat-body.collapsed { display:none; }
+    .cat-remove-tag { background:none; border:none; cursor:pointer; font-size:0.7rem;
+                      color:#ccc; padding:0 0.15rem; flex-shrink:0; line-height:1; }
+    .cat-remove-tag:hover { color:#e57373; }
+    .cat-add-row { display:flex; align-items:center; gap:0.3rem; padding:0.15rem 0.4rem;
+                   margin-top:0.1rem; }
+    .cat-add-btn { background:none; border:none; color:#bbb; cursor:pointer;
+                   font-size:0.78rem; padding:0; }
+    .cat-add-btn:hover { color:#5c6bc0; }
+    .cat-add-input { flex:1; font-size:0.8rem; padding:0.18rem 0.35rem; border:1px solid #c5cae9;
+                     border-radius:4px; font-family:inherit; min-width:0; }
+    .new-cat-row { display:flex; gap:0.3rem; align-items:center; margin-bottom:0.5rem; }
+    .new-cat-input { flex:1; font-size:0.82rem; padding:0.2rem 0.4rem; border:1px solid #7986cb;
+                     border-radius:4px; font-family:inherit; min-width:0; }
+    .new-cat-btn { background:none; border:1px solid #c5cae9; border-radius:4px;
+                   font-size:0.78rem; color:#7986cb; cursor:pointer; padding:0.2rem 0.45rem; }
+    .new-cat-btn:hover { background:#eef0fb; }
+
     /* ── Inline markup (==highlight== and #tag in viewer) ── */
     mark.inline-hl { background: #fff9c4; border-radius: 2px; padding: 0 2px; }
 
@@ -503,7 +536,19 @@
 
   <!-- Tag / category browser -->
   <div class="card">
-    <h2>Browse by Tag</h2>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.9rem">
+      <h2 style="margin:0">Tags</h2>
+      <button class="new-cat-btn" id="newCatToggleBtn" onclick="toggleNewCatForm()">+ Category</button>
+    </div>
+    <div id="newCatForm" style="display:none">
+      <div class="new-cat-row">
+        <input id="newCatInput" class="new-cat-input" type="text" placeholder="Category name…"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();createCategory();}
+                          else if(event.key==='Escape'){toggleNewCatForm();}">
+        <button class="new-cat-btn" onclick="createCategory()">✓</button>
+        <button class="new-cat-btn" style="color:#aaa" onclick="toggleNewCatForm()">✕</button>
+      </div>
+    </div>
     <div id="tagList">
       <span style="color:#ccc; font-size:0.85rem">Loading…</span>
     </div>
@@ -695,6 +740,8 @@ let activeTagFilter      = null;
 let activeSearchQuery    = null;
 let activeDateFrom       = '';     // year filter lower bound (e.g. '1800')
 let activeDateTo         = '';     // year filter upper bound (e.g. '1850')
+let categoriesData       = [];     // [{id, name, color, tags:[...]}]
+let collapsedCategories  = new Set(); // category IDs that are folded
 let currentDocId         = null;   // document currently open in the viewer
 let currentDocContent    = null;   // raw content string of that document
 let showAnnotationsOnly  = false;
@@ -1126,33 +1173,182 @@ for (const id of ['dateFrom', 'dateTo']) {
 async function loadTagSummary() {
   const container = document.getElementById('tagList');
   try {
-    const tags = await fetch('/api/tags/summary').then(r => r.json());
-    if (!tags.length) {
-      container.innerHTML =
-        '<span style="color:#ccc; font-size:0.83rem; line-height:1.6">' +
-        'No tags yet. Add tags to your documents to see them here.</span>';
-      return;
-    }
-    const maxScore = Math.max(...tags.map(t => t.doc_count + t.highlight_count), 1);
-    container.innerHTML = tags.map(t => {
-      const isActive   = activeTagFilter === t.tag;
-      const countLabel = t.doc_count ? `${t.doc_count}` : '';
-      return `
-        <div class="tag-bar${isActive ? ' active' : ''}" data-browse-tag="${escapeHtml(t.tag)}">
-          <span class="tag-bar-label">#${escapeHtml(t.tag)}</span>
-          <div class="tag-bar-actions">
-            <button class="tag-edit-btn" data-edit-tag="${escapeHtml(t.tag)}" title="Rename tag">✎</button>
-            <button class="tag-delete-btn" data-delete-tag="${escapeHtml(t.tag)}" title="Delete tag">🗑</button>
-          </div>
-          <span class="tag-bar-count">${countLabel}</span>
-        </div>`;
-    }).join('');
+    const [tags, categories] = await Promise.all([
+      fetch('/api/tags/summary').then(r => r.json()),
+      fetch('/api/categories').then(r => r.json()),
+    ]);
+    categoriesData = categories;
+    renderTagBrowser(tags, categories);
   } catch {
     container.innerHTML = '<span class="error" style="font-size:0.82rem">Failed to load tags.</span>';
   }
 }
 
+function renderTagBrowser(tags, categories) {
+  const container = document.getElementById('tagList');
+  if (!tags.length) {
+    container.innerHTML =
+      '<span style="color:#ccc; font-size:0.83rem; line-height:1.6">' +
+      'No tags yet. Add tags to your documents to see them here.</span>';
+    return;
+  }
+
+  // Build a lookup: tag -> {doc_count, highlight_count}
+  const tagInfo = {};
+  for (const t of tags) tagInfo[t.tag] = t;
+
+  // Collect all categorized tags (may appear in multiple categories)
+  const allCategorizedTags = new Set(categories.flatMap(c => c.tags));
+
+  let html = '';
+
+  // Render each category section
+  for (const cat of categories) {
+    const isCollapsed = collapsedCategories.has(cat.id);
+    html += `<div class="cat-section">`;
+    html += `<div class="cat-header" data-cat-id="${escapeHtml(cat.id)}">
+      <span class="cat-color-dot" style="background:${escapeHtml(cat.color)}"></span>
+      <span class="cat-header-label">${escapeHtml(cat.name)}</span>
+      <div class="cat-header-actions" onclick="event.stopPropagation()">
+        <button class="cat-rename-btn" data-cat-id="${escapeHtml(cat.id)}" data-cat-name="${escapeHtml(cat.name)}" title="Rename category">✎</button>
+        <button class="cat-delete-btn" data-cat-id="${escapeHtml(cat.id)}" data-cat-name="${escapeHtml(cat.name)}" title="Delete category">🗑</button>
+      </div>
+    </div>`;
+    html += `<div class="cat-body${isCollapsed ? ' collapsed' : ''}" data-cat-body="${escapeHtml(cat.id)}">`;
+    for (const tag of cat.tags) {
+      const info = tagInfo[tag] || { doc_count: 0 };
+      const isActive = activeTagFilter === tag;
+      html += `<div class="tag-bar${isActive ? ' active' : ''}" data-browse-tag="${escapeHtml(tag)}">
+        <span class="tag-bar-label">#${escapeHtml(tag)}</span>
+        <div class="tag-bar-actions">
+          <button class="tag-edit-btn" data-edit-tag="${escapeHtml(tag)}" title="Rename tag">✎</button>
+          <button class="tag-delete-btn" data-delete-tag="${escapeHtml(tag)}" title="Delete tag corpus-wide">🗑</button>
+        </div>
+        <button class="cat-remove-tag" data-cat-id="${escapeHtml(cat.id)}" data-cat-tag="${escapeHtml(tag)}" title="Remove from this category">×</button>
+        <span class="tag-bar-count">${info.doc_count || ''}</span>
+      </div>`;
+    }
+    // Add-tag row for this category
+    const dataListId = `cat-tags-list-${cat.id}`;
+    const tagsNotInCat = tags.map(t => t.tag).filter(t => !cat.tags.includes(t));
+    html += `<div class="cat-add-row">
+      <button class="cat-add-btn" data-cat-add="${escapeHtml(cat.id)}" title="Add tag to category">+ Add tag…</button>
+      <input class="cat-add-input" id="cat-add-input-${escapeHtml(cat.id)}" style="display:none"
+             list="${dataListId}" placeholder="tag name…"
+             data-cat-id="${escapeHtml(cat.id)}">
+      <datalist id="${dataListId}">
+        ${tagsNotInCat.map(t => `<option value="${escapeHtml(t)}">`).join('')}
+      </datalist>
+    </div>`;
+    html += `</div>`; // cat-body
+    html += `</div>`; // cat-section
+  }
+
+  // Uncategorized section
+  const uncategorized = tags.filter(t => !allCategorizedTags.has(t.tag));
+  if (uncategorized.length) {
+    const isCollapsed = collapsedCategories.has('__uncategorized__');
+    html += `<div class="cat-section">`;
+    html += `<div class="cat-header" data-cat-id="__uncategorized__">
+      <span class="cat-color-dot" style="background:#ccc"></span>
+      <span class="cat-header-label">Uncategorized</span>
+    </div>`;
+    html += `<div class="cat-body${isCollapsed ? ' collapsed' : ''}" data-cat-body="__uncategorized__">`;
+    for (const t of uncategorized) {
+      const isActive = activeTagFilter === t.tag;
+      html += `<div class="tag-bar${isActive ? ' active' : ''}" data-browse-tag="${escapeHtml(t.tag)}">
+        <span class="tag-bar-label">#${escapeHtml(t.tag)}</span>
+        <div class="tag-bar-actions">
+          <button class="tag-edit-btn" data-edit-tag="${escapeHtml(t.tag)}" title="Rename tag">✎</button>
+          <button class="tag-delete-btn" data-delete-tag="${escapeHtml(t.tag)}" title="Delete tag corpus-wide">🗑</button>
+        </div>
+        <span class="tag-bar-count">${t.doc_count || ''}</span>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  container.innerHTML = html;
+
+  // Wire add-tag inputs (keydown events)
+  container.querySelectorAll('.cat-add-input').forEach(input => {
+    input.addEventListener('keydown', async e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const catId = input.dataset.catId;
+        const tag   = input.value.trim().toLowerCase().replace(/\s+/g, '-');
+        if (!tag) return;
+        await addTagToCategory(catId, tag);
+      } else if (e.key === 'Escape') {
+        input.style.display = 'none';
+        input.previousElementSibling?.style.removeProperty('display');
+      }
+    });
+    input.addEventListener('blur', () => {
+      // Hide input if user clicks away without submitting
+      setTimeout(() => {
+        if (document.activeElement !== input) {
+          input.style.display = 'none';
+          const addBtn = input.closest('.cat-add-row')?.querySelector('.cat-add-btn');
+          if (addBtn) addBtn.style.removeProperty('display');
+        }
+      }, 150);
+    });
+  });
+}
+
 document.getElementById('tagList').addEventListener('click', async e => {
+  // Category header collapse/expand
+  const catHeader = e.target.closest('.cat-header');
+  if (catHeader && !e.target.closest('.cat-header-actions')) {
+    const catId = catHeader.dataset.catId;
+    if (collapsedCategories.has(catId)) collapsedCategories.delete(catId);
+    else collapsedCategories.add(catId);
+    const body = document.querySelector(`.cat-body[data-cat-body="${CSS.escape(catId)}"]`);
+    if (body) body.classList.toggle('collapsed', collapsedCategories.has(catId));
+    return;
+  }
+
+  // Rename category
+  const catRenameBtn = e.target.closest('.cat-rename-btn');
+  if (catRenameBtn) {
+    e.stopPropagation();
+    startCategoryEdit(catRenameBtn.dataset.catId, catRenameBtn.dataset.catName);
+    return;
+  }
+
+  // Delete category
+  const catDelBtn = e.target.closest('.cat-delete-btn');
+  if (catDelBtn) {
+    e.stopPropagation();
+    const { catId, catName } = catDelBtn.dataset;
+    if (!confirm(`Delete category "${catName}"?\nTags will not be deleted — they'll become uncategorized.`)) return;
+    await deleteCategory(catId);
+    return;
+  }
+
+  // Remove tag from category (× button)
+  const removeTagBtn = e.target.closest('.cat-remove-tag');
+  if (removeTagBtn) {
+    e.stopPropagation();
+    await removeTagFromCategory(removeTagBtn.dataset.catId, removeTagBtn.dataset.catTag);
+    return;
+  }
+
+  // Show add-tag input
+  const addBtn = e.target.closest('.cat-add-btn');
+  if (addBtn) {
+    e.stopPropagation();
+    const catId = addBtn.dataset.catAdd;
+    const input = document.getElementById(`cat-add-input-${catId}`);
+    if (input) {
+      addBtn.style.display = 'none';
+      input.style.display = 'block';
+      input.focus();
+    }
+    return;
+  }
+
   // Edit button — replace tag bar with inline input form
   const editBtn = e.target.closest('.tag-edit-btn');
   if (editBtn) { e.stopPropagation(); startTagEdit(editBtn.dataset.editTag); return; }
@@ -1183,9 +1379,11 @@ document.getElementById('tagList').addEventListener('click', async e => {
   const cancelBtn = e.target.closest('.tag-editor-cancel');
   if (cancelBtn) { e.stopPropagation(); loadTagSummary(); return; }
 
-  // Browse by tag (click on bar, not action buttons)
+  // Browse by tag (click on bar, not action buttons or cat-remove-tag)
   const bar = e.target.closest('[data-browse-tag]');
-  if (bar && !e.target.closest('.tag-bar-actions')) browseTag(bar.dataset.browseTag);
+  if (bar && !e.target.closest('.tag-bar-actions') && !e.target.closest('.cat-remove-tag')) {
+    browseTag(bar.dataset.browseTag);
+  }
 });
 
 function startTagEdit(tag) {
@@ -1232,6 +1430,95 @@ async function deleteTagCorpusWide(tag) {
   } catch (err) {
     alert('Could not delete tag: ' + err.message);
   }
+}
+
+// ── Category actions ──────────────────────────────────────────────────────────
+
+function toggleNewCatForm() {
+  const form = document.getElementById('newCatForm');
+  const input = document.getElementById('newCatInput');
+  if (form.style.display === 'none') {
+    form.style.display = '';
+    input.value = '';
+    input.focus();
+  } else {
+    form.style.display = 'none';
+  }
+}
+
+async function createCategory() {
+  const input = document.getElementById('newCatInput');
+  const name = input.value.trim();
+  if (!name) { input.style.borderColor = '#e53935'; input.focus(); return; }
+  try {
+    const r = await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Create failed');
+    document.getElementById('newCatForm').style.display = 'none';
+    await loadTagSummary();
+  } catch (err) { alert('Could not create category: ' + err.message); }
+}
+
+function startCategoryEdit(catId, currentName) {
+  const header = document.querySelector(`.cat-header[data-cat-id="${CSS.escape(catId)}"]`);
+  if (!header) return;
+  const label = header.querySelector('.cat-header-label');
+  if (!label) return;
+  const originalText = label.textContent;
+  label.innerHTML = `<input class="cat-add-input" id="cat-rename-input-${escapeHtml(catId)}"
+    type="text" value="${escapeHtml(currentName)}" style="margin:0; padding:0.1rem 0.3rem;"
+    onclick="event.stopPropagation()">`;
+  const inp = document.getElementById(`cat-rename-input-${catId}`);
+  if (!inp) return;
+  inp.focus(); inp.select();
+  inp.addEventListener('keydown', async ev => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      const newName = inp.value.trim();
+      if (!newName) { inp.style.borderColor = '#e53935'; return; }
+      try {
+        const r = await fetch('/api/categories/' + encodeURIComponent(catId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName }),
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'Rename failed');
+        await loadTagSummary();
+      } catch (err) { alert('Could not rename category: ' + err.message); loadTagSummary(); }
+    } else if (ev.key === 'Escape') {
+      loadTagSummary();
+    }
+  });
+  inp.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== inp) loadTagSummary();
+  }, 200));
+}
+
+async function deleteCategory(catId) {
+  try {
+    const r = await fetch('/api/categories/' + encodeURIComponent(catId), { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Delete failed');
+    await loadTagSummary();
+  } catch (err) { alert('Could not delete category: ' + err.message); }
+}
+
+async function addTagToCategory(catId, tag) {
+  try {
+    const r = await fetch(`/api/categories/${encodeURIComponent(catId)}/tags/${encodeURIComponent(tag)}`, { method: 'POST' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Add failed');
+    await loadTagSummary();
+  } catch (err) { alert('Could not add tag: ' + err.message); }
+}
+
+async function removeTagFromCategory(catId, tag) {
+  try {
+    const r = await fetch(`/api/categories/${encodeURIComponent(catId)}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Remove failed');
+    await loadTagSummary();
+  } catch (err) { alert('Could not remove tag from category: ' + err.message); }
 }
 
 function browseTag(tag) {

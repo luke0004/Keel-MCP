@@ -16,6 +16,22 @@ import { SupabaseTransport } from './core/SupabaseTransport.js';
 import { config } from 'dotenv';
 config(); // load .env so SUPABASE_URL / SUPABASE_KEY are available at startup
 
+function initTagCategoryTables(db: ReturnType<typeof getDB>) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tag_categories (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL UNIQUE,
+      color      TEXT NOT NULL DEFAULT '#7986cb',
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS tag_category_memberships (
+      category_id TEXT NOT NULL REFERENCES tag_categories(id) ON DELETE CASCADE,
+      tag         TEXT NOT NULL,
+      PRIMARY KEY (category_id, tag)
+    );
+  `);
+}
+
 // Initialize DB and create tables on startup
 const db = getDB();
 initSchema(db, LogbookSchema);
@@ -24,6 +40,7 @@ initSchema(db, CorpusSchema);
 initCorpusFTS(db);
 initActivityLog(db);
 initAnnotationsTable(db, AnnotationSchema);
+initTagCategoryTables(db);
 db.close();
 
 const app = express();
@@ -1083,6 +1100,8 @@ app.patch('/api/tags/:tag', (req: any, res: any) => {
       const annResult = db.prepare(
         "UPDATE corpus_annotations SET tag = ?, is_dirty = 1, updated_at = ? WHERE tag = ?"
       ).run(newTag, Date.now(), oldTag) as { changes: number };
+      // Update category memberships
+      db.prepare('UPDATE tag_category_memberships SET tag = ? WHERE tag = ?').run(newTag, oldTag);
       res.json({ updated_docs: updatedDocs, updated_annotations: annResult.changes });
     } finally { db.close(); }
   } catch (error) {
@@ -1111,11 +1130,112 @@ app.delete('/api/tags/:tag', (req: any, res: any) => {
       const annResult = db.prepare(
         "UPDATE corpus_annotations SET tag = NULL, is_dirty = 1, updated_at = ? WHERE tag = ?"
       ).run(Date.now(), tag) as { changes: number };
+      // Remove from category memberships
+      db.prepare('DELETE FROM tag_category_memberships WHERE tag = ?').run(tag);
       res.json({ updated_docs: updatedDocs, updated_annotations: annResult.changes });
     } finally { db.close(); }
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Tag category endpoints
+// ---------------------------------------------------------------------------
+
+// GET /api/categories
+app.get('/api/categories', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const cats = db.prepare(
+        'SELECT id, name, color, sort_order FROM tag_categories ORDER BY sort_order, name'
+      ).all() as { id: string; name: string; color: string; sort_order: number }[];
+      const memberships = db.prepare(
+        'SELECT category_id, tag FROM tag_category_memberships'
+      ).all() as { category_id: string; tag: string }[];
+      const tagsByCategory: Record<string, string[]> = {};
+      for (const m of memberships) {
+        if (!tagsByCategory[m.category_id]) tagsByCategory[m.category_id] = [];
+        (tagsByCategory[m.category_id] as string[]).push(m.tag);
+      }
+      const result = cats.map(c => ({ ...c, tags: tagsByCategory[c.id] ?? [] }));
+      res.json(result);
+    } finally { db.close(); }
+  } catch (error) { res.status(500).json({ error: (error as Error).message }); }
+});
+
+// POST /api/categories  { name, color? }
+app.post('/api/categories', (req: any, res: any) => {
+  const name  = String(req.body?.name ?? '').trim();
+  const color = String(req.body?.color ?? '#7986cb').trim();
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  try {
+    const db = getDB();
+    try {
+      const id = randomUUID();
+      const maxOrder = (db.prepare('SELECT MAX(sort_order) as m FROM tag_categories').get() as any)?.m ?? -1;
+      db.prepare(
+        'INSERT INTO tag_categories (id, name, color, sort_order) VALUES (?, ?, ?, ?)'
+      ).run(id, name, color, maxOrder + 1);
+      res.json({ id, name, color, sort_order: maxOrder + 1 });
+    } finally { db.close(); }
+  } catch (error) { res.status(500).json({ error: (error as Error).message }); }
+});
+
+// PATCH /api/categories/:id  { name?, color? }
+app.patch('/api/categories/:id', (req: any, res: any) => {
+  const { id } = req.params;
+  const name  = req.body?.name  !== undefined ? String(req.body.name).trim()  : undefined;
+  const color = req.body?.color !== undefined ? String(req.body.color).trim() : undefined;
+  try {
+    const db = getDB();
+    try {
+      if (name  !== undefined) db.prepare('UPDATE tag_categories SET name  = ? WHERE id = ?').run(name, id);
+      if (color !== undefined) db.prepare('UPDATE tag_categories SET color = ? WHERE id = ?').run(color, id);
+      const row = db.prepare('SELECT id, name, color, sort_order FROM tag_categories WHERE id = ?').get(id);
+      if (!row) return res.status(404).json({ error: 'Category not found' });
+      res.json(row);
+    } finally { db.close(); }
+  } catch (error) { res.status(500).json({ error: (error as Error).message }); }
+});
+
+// DELETE /api/categories/:id
+app.delete('/api/categories/:id', (req: any, res: any) => {
+  const { id } = req.params;
+  try {
+    const db = getDB();
+    try {
+      db.prepare('DELETE FROM tag_categories WHERE id = ?').run(id);
+      res.json({ ok: true });
+    } finally { db.close(); }
+  } catch (error) { res.status(500).json({ error: (error as Error).message }); }
+});
+
+// POST /api/categories/:id/tags/:tag
+app.post('/api/categories/:id/tags/:tag', (req: any, res: any) => {
+  const { id } = req.params;
+  const tag = decodeURIComponent(req.params.tag);
+  try {
+    const db = getDB();
+    try {
+      db.prepare('INSERT OR IGNORE INTO tag_category_memberships (category_id, tag) VALUES (?, ?)').run(id, tag);
+      res.json({ ok: true });
+    } finally { db.close(); }
+  } catch (error) { res.status(500).json({ error: (error as Error).message }); }
+});
+
+// DELETE /api/categories/:id/tags/:tag
+app.delete('/api/categories/:id/tags/:tag', (req: any, res: any) => {
+  const { id } = req.params;
+  const tag = decodeURIComponent(req.params.tag);
+  try {
+    const db = getDB();
+    try {
+      db.prepare('DELETE FROM tag_category_memberships WHERE category_id = ? AND tag = ?').run(id, tag);
+      res.json({ ok: true });
+    } finally { db.close(); }
+  } catch (error) { res.status(500).json({ error: (error as Error).message }); }
 });
 
 // ---------------------------------------------------------------------------
