@@ -841,24 +841,34 @@ async function addTag(docId, tag) {
 
 async function removeTag(docId, tag) {
   try {
+    // 1. Compute new tag list and patch the document
     const doc  = await fetch('/api/documents/' + docId).then(r => r.json());
     const tags = parseTags(doc.tags).filter(t => t !== tag);
-    await updateDocTags(docId, tags);          // patches + refreshCorpus()
+    const r = await fetch('/api/documents/' + docId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags }),
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.error || 'Update failed'); }
 
-    // Delete inline annotations for the removed tag (including null-tagged highlights,
-    // which have no explicit #tag but were imported alongside this document's tags).
+    // 2. Delete orphan inline annotations for the removed tag
     const anns = await fetch('/api/documents/' + docId + '/annotations').then(r => r.json());
-    const remainingTags = tags; // already filtered above
     const orphans = anns.filter(a =>
       a.author_id === 'inline' &&
-      (a.tag === tag || (a.tag == null && remainingTags.length === 0))
+      (a.tag === tag || (a.tag == null && tags.length === 0))
     );
-    await Promise.all(orphans.map(a =>
-      fetch('/api/annotations/' + a.id, { method: 'DELETE' })
-    ));
-    if (currentDocId === docId) {
-      await viewDocument(docId);               // re-render viewer without ghost highlights
-    }
+    const results = await Promise.allSettled(
+      orphans.map(a => fetch('/api/annotations/' + a.id, { method: 'DELETE' })
+        .then(r => { if (!r.ok) throw new Error('Delete failed for ' + a.id); })
+      )
+    );
+    const failures = results.filter(r => r.status === 'rejected');
+    if (failures.length) console.warn('Some annotation deletes failed:', failures);
+
+    // 3. Refresh everything now that all mutations are done
+    if (currentDocId === docId) await viewDocument(docId);
+    await refreshCorpus();
+    loadTagSummary();
   } catch (err) { alert('Could not remove tag: ' + err.message); }
 }
 

@@ -246,6 +246,17 @@ function propagateTagToDocument(db: ReturnType<typeof getDB>, docId: unknown, ta
   }
 }
 
+function pruneTagFromDocument(db: ReturnType<typeof getDB>, docId: unknown, tag: string, now: number) {
+  const still = db.prepare(
+    `SELECT COUNT(*) AS n FROM corpus_annotations WHERE document_id = ? AND tag = ?`
+  ).get(docId, tag) as { n: number };
+  if (still.n > 0) return;
+  const doc = db.prepare('SELECT tags FROM corpus_documents WHERE id = ?').get(docId) as { tags: string } | undefined;
+  if (!doc) return;
+  const tags: string[] = JSON.parse(doc.tags || '[]').filter((t: string) => t !== tag);
+  db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, docId);
+}
+
 app.get('/api/documents/:id/annotations', (req: any, res: any) => {
   try {
     const db = getDB();
@@ -296,11 +307,13 @@ app.delete('/api/annotations/:id', (req: any, res: any) => {
   try {
     const db = getDB();
     try {
-      const ann = db.prepare('SELECT author_type FROM corpus_annotations WHERE id = ?').get(req.params.id) as { author_type: string } | undefined;
+      const ann = db.prepare('SELECT author_type, tag, document_id FROM corpus_annotations WHERE id = ?').get(req.params.id) as { author_type: string; tag: string | null; document_id: string } | undefined;
       if (!ann) return res.status(404).json({ error: 'Annotation not found' });
       // Researchers can only delete their own annotations
       if (ann.author_type !== 'human') return res.status(403).json({ error: 'LLM annotations are immutable. Add a correction instead.' });
       db.prepare('DELETE FROM corpus_annotations WHERE id = ?').run(req.params.id);
+      const now = Date.now();
+      if (ann.tag) pruneTagFromDocument(db, ann.document_id, ann.tag, now);
       res.json({ status: 'deleted' });
     } finally { db.close(); }
   } catch (error) {
@@ -391,7 +404,9 @@ app.patch('/api/annotations/:id/review', (req: any, res: any) => {
       if (!ann) return res.status(404).json({ error: 'Annotation not found' });
 
       if (action === 'accept') {
-        db.prepare('UPDATE corpus_annotations SET review_status = ? WHERE id = ?').run('accepted', req.params.id);
+        const now = Date.now();
+        db.prepare('UPDATE corpus_annotations SET review_status = ?, updated_at = ? WHERE id = ?').run('accepted', now, req.params.id);
+        if (ann.tag) propagateTagToDocument(db, ann.document_id, ann.tag as string, now);
         res.json({ status: 'accepted' });
 
       } else if (action === 'reject') {
