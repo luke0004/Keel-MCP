@@ -265,6 +265,7 @@
       color: #1a1a2e;
     }
     input:focus { outline: 2px solid #5c6bc0; border-color: transparent; }
+    #kwicInput:focus { outline: none; border-color: #5c6bc0; }
 
     button {
       background: #5c6bc0; color: white; border: none;
@@ -1940,9 +1941,6 @@ async function runTermFreq() {
       </svg>
       <div style="font-size:0.71rem; color:#bbb; margin-top:0.2rem; padding-left:${padL}px">
         bar height = ${isTag ? 'documents tagged per decade' : 'occurrence count per decade'}
-        ${data.some(d => d.total_docs > d.doc_count)
-          ? ' · grey bars = no occurrences that decade'
-          : ''}
       </div>`;
   } catch (err) {
     results.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
