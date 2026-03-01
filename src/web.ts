@@ -242,7 +242,7 @@ function propagateTagToDocument(db: ReturnType<typeof getDB>, docId: unknown, ta
   const tags: string[] = JSON.parse(doc.tags || '[]');
   if (!tags.includes(tag)) {
     tags.push(tag);
-    db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, docId);
+    db.prepare('UPDATE corpus_documents SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?').run(JSON.stringify(tags), now, docId);
   }
 }
 
@@ -265,7 +265,7 @@ function pruneTagFromDocumentIfUnused(
   const tags: string[] = JSON.parse(doc.tags || '[]');
   const next = tags.filter(t => t !== oldTag);
   if (next.length !== tags.length) {
-    db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(next), now, docId);
+    db.prepare('UPDATE corpus_documents SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?').run(JSON.stringify(next), now, docId);
   }
 }
 
