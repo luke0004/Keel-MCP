@@ -19,7 +19,7 @@ export const CorpusSchema: SyncSchema = {
   tableName: "corpus_documents",
   fields: ["title", "author", "publication_date", "content", "metadata", "tags"],
   jsonFields: ["metadata", "tags"],
-  unionSetFields: ["tags"],
+  unionSetFields: [],  // tags uses LWW so deletions sync correctly
   columnDefs: {
     title: "TEXT",
     author: "TEXT",
