@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { getDB, initSchema, initCorpusFTS, initActivityLog, initAnnotationsTable } from './db/index.js';
-import { LogbookSchema, CorpusSchema, AnnotationSchema } from './schema.js';
+import { LogbookSchema, CorpusSchema, AnnotationSchema, CategorySchema } from './schema.js';
 import { AgentMemorySchema } from './schemas/AgentMemory.js';
 import multer from 'multer';
 import { IngestionService, stripInlineMarkup } from './ingestion.js';
@@ -17,19 +17,39 @@ import { config } from 'dotenv';
 config(); // load .env so SUPABASE_URL / SUPABASE_KEY are available at startup
 
 function initTagCategoryTables(db: ReturnType<typeof getDB>) {
+  // tag_categories is now a synced table — initSchema adds sync columns + tags field
+  initSchema(db, CategorySchema);
+
+  // tag_category_memberships is kept as a write-through mirror for CASCADE deletes
   db.exec(`
-    CREATE TABLE IF NOT EXISTS tag_categories (
-      id         TEXT PRIMARY KEY,
-      name       TEXT NOT NULL UNIQUE,
-      color      TEXT NOT NULL DEFAULT '#7986cb',
-      sort_order INTEGER NOT NULL DEFAULT 0
-    );
     CREATE TABLE IF NOT EXISTS tag_category_memberships (
       category_id TEXT NOT NULL REFERENCES tag_categories(id) ON DELETE CASCADE,
       tag         TEXT NOT NULL,
       PRIMARY KEY (category_id, tag)
     );
   `);
+
+  // One-time migration: populate the tags JSON column from tag_category_memberships
+  // for any existing categories that still have tags = '[]' (the new column default).
+  const memberships = db.prepare(
+    'SELECT category_id, tag FROM tag_category_memberships'
+  ).all() as { category_id: string; tag: string }[];
+  if (memberships.length > 0) {
+    const tagsByCategory: Record<string, string[]> = {};
+    for (const m of memberships) {
+      if (!tagsByCategory[m.category_id]) tagsByCategory[m.category_id] = [];
+      (tagsByCategory[m.category_id] as string[]).push(m.tag);
+    }
+    const now = Date.now();
+    const update = db.prepare(
+      "UPDATE tag_categories SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ? AND (tags IS NULL OR tags = '[]')"
+    );
+    db.transaction(() => {
+      for (const [catId, tags] of Object.entries(tagsByCategory)) {
+        update.run(JSON.stringify(tags), now, catId);
+      }
+    })();
+  }
 }
 
 // Initialize DB and create tables on startup
@@ -657,7 +677,7 @@ app.post('/api/sync', async (_req, res: any) => {
   const db = getDB();
   try {
     const results: Record<string, { pushed: string; pulled: string }> = {};
-    for (const schema of [CorpusSchema, AnnotationSchema]) {
+    for (const schema of [CorpusSchema, AnnotationSchema, CategorySchema]) {
       const transport = new SupabaseTransport(
         process.env.SUPABASE_URL,
         process.env.SUPABASE_KEY,
@@ -1100,8 +1120,18 @@ app.patch('/api/tags/:tag', (req: any, res: any) => {
       const annResult = db.prepare(
         "UPDATE corpus_annotations SET tag = ?, is_dirty = 1, updated_at = ? WHERE tag = ?"
       ).run(newTag, Date.now(), oldTag) as { changes: number };
-      // Update category memberships
+      // Update category memberships (mirror table + tags JSON column)
       db.prepare('UPDATE tag_category_memberships SET tag = ? WHERE tag = ?').run(newTag, oldTag);
+      const catRowsRename = db.prepare('SELECT id, tags FROM tag_categories').all() as { id: string; tags: string }[];
+      const now2 = Date.now();
+      for (const cat of catRowsRename) {
+        let arr: string[]; try { arr = JSON.parse(cat.tags || '[]'); } catch { continue; }
+        const idx = arr.indexOf(oldTag);
+        if (idx === -1) continue;
+        arr[idx] = newTag;
+        db.prepare('UPDATE tag_categories SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(arr), now2, cat.id);
+      }
       res.json({ updated_docs: updatedDocs, updated_annotations: annResult.changes });
     } finally { db.close(); }
   } catch (error) {
@@ -1130,8 +1160,16 @@ app.delete('/api/tags/:tag', (req: any, res: any) => {
       const annResult = db.prepare(
         "UPDATE corpus_annotations SET tag = NULL, is_dirty = 1, updated_at = ? WHERE tag = ?"
       ).run(Date.now(), tag) as { changes: number };
-      // Remove from category memberships
+      // Remove from category memberships (mirror table + tags JSON column)
       db.prepare('DELETE FROM tag_category_memberships WHERE tag = ?').run(tag);
+      const catRowsDelete = db.prepare('SELECT id, tags FROM tag_categories').all() as { id: string; tags: string }[];
+      const now2 = Date.now();
+      for (const cat of catRowsDelete) {
+        let arr: string[]; try { arr = JSON.parse(cat.tags || '[]'); } catch { continue; }
+        if (!arr.includes(tag)) continue;
+        db.prepare('UPDATE tag_categories SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(arr.filter(t => t !== tag)), now2, cat.id);
+      }
       res.json({ updated_docs: updatedDocs, updated_annotations: annResult.changes });
     } finally { db.close(); }
   } catch (error) {
@@ -1149,17 +1187,9 @@ app.get('/api/categories', (_req, res: any) => {
     const db = getDB();
     try {
       const cats = db.prepare(
-        'SELECT id, name, color, sort_order FROM tag_categories ORDER BY sort_order, name'
-      ).all() as { id: string; name: string; color: string; sort_order: number }[];
-      const memberships = db.prepare(
-        'SELECT category_id, tag FROM tag_category_memberships'
-      ).all() as { category_id: string; tag: string }[];
-      const tagsByCategory: Record<string, string[]> = {};
-      for (const m of memberships) {
-        if (!tagsByCategory[m.category_id]) tagsByCategory[m.category_id] = [];
-        (tagsByCategory[m.category_id] as string[]).push(m.tag);
-      }
-      const result = cats.map(c => ({ ...c, tags: tagsByCategory[c.id] ?? [] }));
+        'SELECT id, name, color, sort_order, tags FROM tag_categories ORDER BY sort_order, name'
+      ).all() as { id: string; name: string; color: string; sort_order: number; tags: string }[];
+      const result = cats.map(c => ({ ...c, tags: JSON.parse(c.tags || '[]') as string[] }));
       res.json(result);
     } finally { db.close(); }
   } catch (error) { res.status(500).json({ error: (error as Error).message }); }
@@ -1174,11 +1204,12 @@ app.post('/api/categories', (req: any, res: any) => {
     const db = getDB();
     try {
       const id = randomUUID();
+      const now = Date.now();
       const maxOrder = (db.prepare('SELECT MAX(sort_order) as m FROM tag_categories').get() as any)?.m ?? -1;
       db.prepare(
-        'INSERT INTO tag_categories (id, name, color, sort_order) VALUES (?, ?, ?, ?)'
-      ).run(id, name, color, maxOrder + 1);
-      res.json({ id, name, color, sort_order: maxOrder + 1 });
+        'INSERT INTO tag_categories (id, name, color, sort_order, tags, is_dirty, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?)'
+      ).run(id, name, color, maxOrder + 1, '[]', now);
+      res.json({ id, name, color, sort_order: maxOrder + 1, tags: [] });
     } finally { db.close(); }
   } catch (error) { res.status(500).json({ error: (error as Error).message }); }
 });
@@ -1191,11 +1222,18 @@ app.patch('/api/categories/:id', (req: any, res: any) => {
   try {
     const db = getDB();
     try {
-      if (name  !== undefined) db.prepare('UPDATE tag_categories SET name  = ? WHERE id = ?').run(name, id);
-      if (color !== undefined) db.prepare('UPDATE tag_categories SET color = ? WHERE id = ?').run(color, id);
-      const row = db.prepare('SELECT id, name, color, sort_order FROM tag_categories WHERE id = ?').get(id);
+      const sets: string[] = [];
+      const params: unknown[] = [];
+      if (name  !== undefined) { sets.push('name = ?');  params.push(name); }
+      if (color !== undefined) { sets.push('color = ?'); params.push(color); }
+      if (sets.length) {
+        sets.push('is_dirty = 1', 'updated_at = ?');
+        params.push(Date.now(), id);
+        db.prepare(`UPDATE tag_categories SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+      }
+      const row = db.prepare('SELECT id, name, color, sort_order, tags FROM tag_categories WHERE id = ?').get(id) as any;
       if (!row) return res.status(404).json({ error: 'Category not found' });
-      res.json(row);
+      res.json({ ...row, tags: JSON.parse(row.tags || '[]') });
     } finally { db.close(); }
   } catch (error) { res.status(500).json({ error: (error as Error).message }); }
 });
@@ -1219,7 +1257,15 @@ app.post('/api/categories/:id/tags/:tag', (req: any, res: any) => {
   try {
     const db = getDB();
     try {
-      db.prepare('INSERT OR IGNORE INTO tag_category_memberships (category_id, tag) VALUES (?, ?)').run(id, tag);
+      const row = db.prepare('SELECT tags FROM tag_categories WHERE id = ?').get(id) as { tags: string } | undefined;
+      if (!row) return res.status(404).json({ error: 'Category not found' });
+      const tags = JSON.parse(row.tags || '[]') as string[];
+      if (!tags.includes(tag)) {
+        tags.push(tag);
+        db.prepare('UPDATE tag_categories SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?')
+          .run(JSON.stringify(tags), Date.now(), id);
+        db.prepare('INSERT OR IGNORE INTO tag_category_memberships (category_id, tag) VALUES (?, ?)').run(id, tag);
+      }
       res.json({ ok: true });
     } finally { db.close(); }
   } catch (error) { res.status(500).json({ error: (error as Error).message }); }
@@ -1232,6 +1278,11 @@ app.delete('/api/categories/:id/tags/:tag', (req: any, res: any) => {
   try {
     const db = getDB();
     try {
+      const row = db.prepare('SELECT tags FROM tag_categories WHERE id = ?').get(id) as { tags: string } | undefined;
+      if (!row) return res.status(404).json({ error: 'Category not found' });
+      const tags = (JSON.parse(row.tags || '[]') as string[]).filter(t => t !== tag);
+      db.prepare('UPDATE tag_categories SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(tags), Date.now(), id);
       db.prepare('DELETE FROM tag_category_memberships WHERE category_id = ? AND tag = ?').run(id, tag);
       res.json({ ok: true });
     } finally { db.close(); }

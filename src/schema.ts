@@ -32,6 +32,27 @@ export const CorpusSchema: SyncSchema = {
 };
 
 /**
+ * Tag categories sync their name, colour, sort order, and tag membership list.
+ * Tags within a category are stored as a JSON array on the category row so
+ * the SyncCoordinator can push/pull them as a single record.
+ * LWW (last-writer-wins) on the tags field — same policy as doc.tags.
+ */
+export const CategorySchema: SyncSchema = {
+  tableName: "tag_categories",
+  fields: ["name", "color", "sort_order", "tags"],
+  jsonFields: ["tags"],
+  unionSetFields: [],
+  columnDefs: {
+    name:       "TEXT NOT NULL DEFAULT ''",
+    color:      "TEXT NOT NULL DEFAULT '#7986cb'",
+    sort_order: "INTEGER NOT NULL DEFAULT 0",
+    tags:       "TEXT NOT NULL DEFAULT '[]'",
+  },
+  nullDefaults: { name: '', color: '#7986cb', tags: '[]' },
+  syncTokenKey: "last_token_tag_categories",
+};
+
+/**
  * Annotations are append-only (CRDT): each annotation is a separate row
  * with a stable UUID.  Sync is safe with INSERT OR REPLACE because annotation
  * content never mutates after creation — the upsert is effectively a no-op
