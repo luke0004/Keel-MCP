@@ -1075,7 +1075,7 @@ app.patch('/api/tags/:tag', (req: any, res: any) => {
         try { arr = JSON.parse(doc.tags || '[]'); } catch { continue; }
         if (!arr.includes(oldTag)) continue;
         const next = arr.map(t => t === oldTag ? newTag : t);
-        db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?')
+        db.prepare('UPDATE corpus_documents SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?')
           .run(JSON.stringify(next), Date.now(), doc.id);
         updatedDocs++;
       }
@@ -1104,7 +1104,7 @@ app.delete('/api/tags/:tag', (req: any, res: any) => {
         try { arr = JSON.parse(doc.tags || '[]'); } catch { continue; }
         if (!arr.includes(tag)) continue;
         const next = arr.filter(t => t !== tag);
-        db.prepare('UPDATE corpus_documents SET tags = ?, updated_at = ? WHERE id = ?')
+        db.prepare('UPDATE corpus_documents SET tags = ?, is_dirty = 1, updated_at = ? WHERE id = ?')
           .run(JSON.stringify(next), Date.now(), doc.id);
         updatedDocs++;
       }

@@ -898,7 +898,7 @@ function renderDocCard(doc, snippet) {
     ? `<div class="doc-snippet">${doc.from_annotation ? `&ldquo;${renderSnippet(snippet)}&rdquo;` : renderSnippet(snippet)}</div>` : '';
 
   return `
-    <li class="doc-card" id="doc-${docId}" data-doc-id="${docId}">
+    <li class="doc-card${docId === currentDocId ? ' doc-active' : ''}" id="doc-${docId}" data-doc-id="${docId}">
       <div class="doc-main" data-view-doc="${docId}">
         <div class="doc-title">${escapeHtml(doc.title || 'Untitled')}</div>
         <div class="doc-meta">${escapeHtml(doc.author || '—')} · ${escapeHtml(doc.publication_date || '?')}</div>
