@@ -1704,8 +1704,7 @@ async function pollSyncStatus() {
     const dirty = (s.dirty_documents || 0) + (s.dirty_annotations || 0);
     if (dirty > 0) { el.textContent = `${dirty} unsynced`; el.style.color = '#e65100'; }
     else {
-      const lastRaw = s.last_synced_documents || s.last_synced_annotations;
-      el.textContent = lastRaw ? `Synced ${new Date(lastRaw).toLocaleTimeString()}` : 'Not synced';
+      el.textContent = s.last_sync_at ? `Synced ${new Date(s.last_sync_at).toLocaleTimeString()}` : 'Not synced';
       el.style.color = '#2e7d32';
     }
   } catch { /* ignore */ }

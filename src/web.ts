@@ -588,10 +588,12 @@ app.get('/api/sync/status', (_req, res: any) => {
       const dirtyAnns = (db.prepare('SELECT COUNT(*) as n FROM corpus_annotations WHERE is_dirty = 1').get() as { n: number }).n;
       const tokenDocs = (db.prepare('SELECT value FROM sync_state WHERE key = ?').get(CorpusSchema.syncTokenKey) as { value: string } | undefined)?.value;
       const tokenAnns = (db.prepare('SELECT value FROM sync_state WHERE key = ?').get(AnnotationSchema.syncTokenKey) as { value: string } | undefined)?.value;
+      const lastSyncAt = (db.prepare("SELECT value FROM sync_state WHERE key = 'last_sync_at'").get() as { value: string } | undefined)?.value;
       res.json({
         configured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_KEY),
         dirty_documents:    dirtyDocs,
         dirty_annotations:  dirtyAnns,
+        last_sync_at: lastSyncAt ? new Date(Number(lastSyncAt)).toISOString() : null,
         last_synced_documents:   tokenDocs ? new Date(Number(tokenDocs)).toISOString() : null,
         last_synced_annotations: tokenAnns ? new Date(Number(tokenAnns)).toISOString() : null,
       });
@@ -618,7 +620,10 @@ app.post('/api/sync', async (_req, res: any) => {
       await new SyncCoordinator(db, transport, schema).sync();
       results[schema.tableName] = { pushed: 'ok', pulled: 'ok' };
     }
-    res.json({ status: 'ok', synced: results, timestamp: new Date().toISOString() });
+    const nowMs = Date.now();
+    db.prepare("INSERT INTO sync_state (key, value) VALUES ('last_sync_at', ?) ON CONFLICT(key) DO UPDATE SET value = ?")
+      .run(String(nowMs), String(nowMs));
+    res.json({ status: 'ok', synced: results, timestamp: new Date(nowMs).toISOString() });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   } finally {
