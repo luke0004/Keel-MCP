@@ -597,7 +597,7 @@
   </div>
 </div>
 
-<div class="card corpus-card">
+<div id="libraryPanel" class="card corpus-card">
 
   <div class="corpus-toolbar">
     <div class="corpus-title-area">
@@ -1254,7 +1254,6 @@ function renderTagBrowser(tags, categories) {
     html += `<div class="cat-section">`;
     html += `<div class="cat-header" data-cat-id="${escapeHtml(cat.id)}">
       <span class="cat-arrow" data-cat-collapse="${escapeHtml(cat.id)}">${isCollapsed ? '▸' : '▾'}</span>
-      <span class="cat-color-dot" style="background:${escapeHtml(cat.color)}"></span>
       <span class="cat-header-label">${escapeHtml(cat.name)}</span>
       <div class="cat-header-actions" onclick="event.stopPropagation()">
         <button class="cat-rename-btn" data-cat-id="${escapeHtml(cat.id)}" title="Edit category">✎</button>
@@ -1556,7 +1555,7 @@ function openCategoryEditor(catId) {
   activeCatEditorId = catId;
 
   // Switch panels
-  document.querySelector('.col-corpus .corpus-card:not(#catEditorPanel)').style.display = 'none';
+  document.getElementById('libraryPanel').style.display = 'none';
   const panel = document.getElementById('catEditorPanel');
   panel.style.display = 'flex';
 
@@ -1646,7 +1645,7 @@ async function deleteCategoryFromEditor() {
 function closeCategoryEditor() {
   activeCatEditorId = null;
   document.getElementById('catEditorPanel').style.display = 'none';
-  document.querySelector('.col-corpus .corpus-card:not(#catEditorPanel)').style.removeProperty('display');
+  document.getElementById('libraryPanel').style.removeProperty('display');
 }
 
 function browseTag(tag) {
