@@ -1233,6 +1233,9 @@ document.getElementById('viewerContent').addEventListener('click', async e => {
     startReselect(reselectBtn.dataset.reselectAnn, reselectBtn.dataset.tag, reselectBtn.dataset.text);
     return;
   }
+  // Delete annotation
+  const deleteBtn = e.target.closest('[data-delete-ann]');
+  if (deleteBtn) { await deleteAnnotation(deleteBtn.dataset.deleteAnn); return; }
 });
 
 function showAnnotationEditForm(annId, tag, note, passage) {
@@ -1294,6 +1297,11 @@ function showAnnotationEditForm(annId, tag, note, passage) {
                        font-size:0.79rem; font-family:inherit; padding:0; margin-left:auto">
           ↩ Re-select passage
         </button>
+        <button data-delete-ann="${escapeHtml(annId)}"
+                style="background:none; border:none; color:#e57373; cursor:pointer;
+                       font-size:0.79rem; font-family:inherit; padding:0">
+          🗑 Delete
+        </button>
       </div>
     </div>`;
   document.getElementById('edit-ann-tag-' + annId)?.focus();
@@ -1320,6 +1328,18 @@ async function saveAnnotationEdit(annId) {
     loadTagSummary();
   } catch (err) {
     alert('Could not update annotation: ' + err.message);
+  }
+}
+
+async function deleteAnnotation(annId) {
+  try {
+    const r = await fetch('/api/annotations/' + annId, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Delete failed');
+    await viewDocument(currentDocId);
+    loadTagSummary();
+    refreshCorpus();
+  } catch (err) {
+    alert('Could not delete annotation: ' + err.message);
   }
 }
 
