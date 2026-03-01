@@ -632,6 +632,9 @@
           <button id="freqModeTagBtn"  class="freq-mode-btn"        onclick="setFreqMode('tag')">#Tag</button>
         </div>
         <input id="freqInput" type="text" placeholder="Term to plot over time…" style="flex:1">
+        <button id="freqClearBtn" title="Clear"
+                style="background:none; border:none; color:#ccc; cursor:pointer;
+                       font-size:1.05rem; padding:0 0.1rem; line-height:1">×</button>
         <button id="freqBtn" class="btn-sm">Plot</button>
       </div>
       <div id="freqResults" style="flex:1; overflow-y:auto; min-height:0">
@@ -1776,8 +1779,15 @@ function setFreqMode(mode) {
 }
 
 document.getElementById('freqBtn').addEventListener('click', runTermFreq);
+document.getElementById('freqClearBtn').addEventListener('click', () => {
+  document.getElementById('freqInput').value = '';
+  document.getElementById('freqResults').innerHTML =
+    '<span style="color:#ccc; font-size:0.83rem">Enter a term or tag to plot its frequency per decade.</span>';
+  document.getElementById('freqInput').focus();
+});
 document.getElementById('freqInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runTermFreq();
+  if (e.key === 'Escape') document.getElementById('freqClearBtn').click();
 });
 
 async function runTermFreq() {
