@@ -329,6 +329,7 @@ app.patch('/api/annotations/:id', (req: any, res: any) => {
       params.push(now, req.params.id);
 
       db.prepare(`UPDATE corpus_annotations SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      if (tag !== undefined && tag) propagateTagToDocument(db, ann.document_id, tag, now);
       const updated = db.prepare('SELECT * FROM corpus_annotations WHERE id = ?').get(req.params.id);
       res.json(updated);
     } finally { db.close(); }
@@ -976,7 +977,7 @@ app.get('/api/tags/summary', (_req, res: any) => {
       const hlRows = db.prepare(`
         SELECT tag, COUNT(*) AS n
         FROM corpus_annotations
-        WHERE author_type = 'human' AND author_id = 'inline' AND tag IS NOT NULL
+        WHERE author_type = 'human' AND tag IS NOT NULL
         GROUP BY tag
       `).all() as { tag: string; n: number }[];
       const tagHlCount = new Map<string, number>(hlRows.map(r => [r.tag, r.n]));
