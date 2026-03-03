@@ -1626,8 +1626,10 @@ app.get('/api/export', (_req, res: any) => {
 
       // ── One .md per document ───────────────────────────────────────────
       const docTitles = new Map<string, string>();
+      const docDates  = new Map<string, string>();
       for (const doc of docs) {
         docTitles.set(doc.id, doc.title);
+        docDates.set(doc.id, doc.publication_date ?? '');
         const tags = JSON.parse(doc.tags || '[]') as string[];
         const meta = JSON.parse(doc.metadata || '{}') as Record<string, unknown>;
 
@@ -1650,13 +1652,14 @@ app.get('/api/export', (_req, res: any) => {
 
       // ── annotations.csv ───────────────────────────────────────────────
       const header = [
-        'document_id', 'document_title', 'tag', 'source_passage',
+        'document_id', 'document_title', 'publication_date', 'tag', 'highlighted_text',
         'text', 'author_type', 'review_status', 'updated_at',
       ].join(',');
 
       const rows = annotations.map((a: any) => [
         q(a.document_id),
         q(docTitles.get(a.document_id) ?? ''),
+        q(docDates.get(a.document_id) ?? ''),
         q(a.tag),
         q(a.source_passage),
         q(a.text),

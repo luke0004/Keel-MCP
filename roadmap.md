@@ -78,6 +78,7 @@ The UI has been refined from a developer tool into one suitable for a non-techni
 
 **Export:**
 - Zip export: one `.md` per document (YAML front-matter + body) + `annotations.csv`
+- CSV columns: `document_id`, `document_title`, `publication_date`, `tag`, `highlighted_text`, `text`, `author_type`, `review_status`, `updated_at`
 
 ---
 
@@ -103,7 +104,7 @@ The UI has been refined from a developer tool into one suitable for a non-techni
 
 - **REFI-QDA (`.qdpx`):** standard interchange format for Atlas.ti, MAXQDA, NVivo, RQDA
 - **Zotero RDF:** export document metadata as a Zotero library
-- **TSV / CSV for R and Python:** annotations + document metadata in tabular form (currently: `annotations.csv` inside the zip export)
+- **TSV / CSV for R and Python:** annotations + document metadata in tabular form (`annotations.csv` inside the zip export includes `publication_date` and `highlighted_text` columns) ✅
 - **CSV export for frequency analyses:** "Download CSV" button on the multi-series frequency chart (decade × series columns)
 
 ---

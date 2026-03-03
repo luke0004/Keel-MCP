@@ -213,6 +213,27 @@ This passage describes ==the concept of the sublime== #sublime in Romantic music
 
 ---
 
+## Export
+
+Click **Export .zip** in the left sidebar to download a zip archive containing:
+
+- **`documents/`** — one `.md` file per document, with YAML front-matter (title, author, publication date, tags) and the full document body
+- **`annotations.csv`** — all annotations in a flat table with the following columns:
+
+| Column | Contents |
+|---|---|
+| `document_id` | Unique identifier of the source document |
+| `document_title` | Title of the source document |
+| `publication_date` | Publication date of the source document |
+| `tag` | Tag attached to the annotation |
+| `highlighted_text` | The passage of text that was highlighted when the annotation was created |
+| `text` | The researcher's note (may equal `highlighted_text` if no separate note was entered) |
+| `author_type` | `human` for researcher annotations; `llm` for AI-generated annotations |
+| `review_status` | `accepted`, `rejected`, or `pending` |
+| `updated_at` | ISO 8601 timestamp of the last modification |
+
+---
+
 ## Research tools
 
 Switch to the **Research** tab (top of the Reader column) to access corpus-wide analysis tools. These work on your full document collection without requiring any AI:

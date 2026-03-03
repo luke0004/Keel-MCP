@@ -306,8 +306,8 @@
     .tag-bar-label { font-size: 0.84rem; color: #444; white-space: nowrap; overflow: hidden;
                      text-overflow: ellipsis; flex: 1; min-width: 0; }
     .tag-bar.active .tag-bar-label { color: #3f51b5; font-weight: 600; }
-    .tag-bar-count { font-size: 0.72rem; color: #bbb; flex: 0 0 2rem; text-align: right;
-                     font-variant-numeric: tabular-nums; }
+    .tag-bar-count { font-size: 0.72rem; color: #bbb; flex: 0 0 auto; min-width: 2rem;
+                     text-align: right; font-variant-numeric: tabular-nums; }
     .tag-bar-actions { display:flex; gap:0.15rem; opacity:0; transition:opacity .15s; flex-shrink:0; }
     .tag-bar:hover .tag-bar-actions { opacity:1; }
     .tag-bar-actions button { background:none; border:none; cursor:pointer; font-size:0.72rem;
@@ -1263,6 +1263,17 @@ async function loadTagSummary() {
   }
 }
 
+function tagCountSpan(info) {
+  const docs = info.doc_count || 0;
+  const anns = info.highlight_count || 0;
+  if (!docs && !anns) return '<span class="tag-bar-count"></span>';
+  const display = anns > 0 ? anns : docs;
+  const tip     = anns > 0
+    ? `${docs} doc${docs !== 1 ? 's' : ''} · ${anns} annotation${anns !== 1 ? 's' : ''}`
+    : `${docs} doc${docs !== 1 ? 's' : ''}`;
+  return `<span class="tag-bar-count" title="${tip}">${display}</span>`;
+}
+
 function renderTagBrowser(tags, categories) {
   const container = document.getElementById('tagList');
   if (!tags.length) {
@@ -1303,7 +1314,7 @@ function renderTagBrowser(tags, categories) {
           <button class="tag-delete-btn" data-delete-tag="${escapeHtml(tag)}" title="Delete tag corpus-wide">🗑</button>
         </div>
         <button class="cat-remove-tag" data-cat-id="${escapeHtml(cat.id)}" data-cat-tag="${escapeHtml(tag)}" title="Remove from this category">×</button>
-        <span class="tag-bar-count">${info.doc_count || ''}</span>
+        ${tagCountSpan(info)}
       </div>`;
     }
     // Add-tag row for this category
@@ -1338,7 +1349,7 @@ function renderTagBrowser(tags, categories) {
           <button class="tag-edit-btn" data-edit-tag="${escapeHtml(t.tag)}" title="Rename tag">✎</button>
           <button class="tag-delete-btn" data-delete-tag="${escapeHtml(t.tag)}" title="Delete tag corpus-wide">🗑</button>
         </div>
-        <span class="tag-bar-count">${t.doc_count || ''}</span>
+        ${tagCountSpan(t)}
       </div>`;
     }
     html += `</div></div>`;
