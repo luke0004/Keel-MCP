@@ -55,6 +55,7 @@ The UI has been refined from a developer tool into one suitable for a non-techni
 - Tag editing inline (add / remove without leaving the library)
 
 **Reader (right column):**
+- **Annotate / Copy mode toggle:** `✏ Annotate` button in the Reader header activates annotation mode (default on); switching to `📋 Copy` mode bypasses the selection handler so text can be copied normally; re-select passage automatically re-activates annotation mode
 - Text-selection annotation toolbar: select passage → assign tag + note → saved to `corpus_annotations`
 - `source_passage`, `start_offset`, `end_offset` stored for precise passage linking
 - Coloured highlights over annotated passages (deterministic pastel colour per tag)
