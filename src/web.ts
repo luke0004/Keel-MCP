@@ -1421,6 +1421,62 @@ app.get('/api/analysis/timeline', (_req, res: any) => {
 });
 
 // ---------------------------------------------------------------------------
+// Duplicates — GET /api/analysis/duplicates
+// Annotation groups sharing the same source_passage within the same document.
+// ---------------------------------------------------------------------------
+
+app.get('/api/analysis/duplicates', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const rows = db.prepare(`
+        SELECT
+          a.document_id,
+          d.title AS document_title,
+          a.source_passage,
+          json_group_array(json_object(
+            'id', a.id, 'tag', a.tag, 'text', a.text,
+            'author_type', a.author_type, 'review_status', a.review_status
+          )) AS annotations
+        FROM corpus_annotations a
+        JOIN corpus_documents d ON d.id = a.document_id
+        WHERE a.source_passage IS NOT NULL AND a.source_passage != ''
+        GROUP BY a.document_id, a.source_passage
+        HAVING count(*) > 1
+        ORDER BY d.title, a.source_passage
+      `).all() as { document_id: string; document_title: string; source_passage: string; annotations: string }[];
+      res.json(rows.map(r => ({ ...r, annotations: JSON.parse(r.annotations) })));
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Untagged — GET /api/analysis/untagged
+// Annotations where tag IS NULL or empty string.
+// ---------------------------------------------------------------------------
+
+app.get('/api/analysis/untagged', (_req, res: any) => {
+  try {
+    const db = getDB();
+    try {
+      const rows = db.prepare(`
+        SELECT a.id, a.document_id, a.source_passage, a.text, a.author_type, a.review_status,
+               d.title AS document_title
+        FROM corpus_annotations a
+        JOIN corpus_documents d ON d.id = a.document_id
+        WHERE a.tag IS NULL OR a.tag = ''
+        ORDER BY d.title, a.updated_at DESC
+      `).all();
+      res.json(rows);
+    } finally { db.close(); }
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Term frequency over time — GET /api/analysis/termfreq?q=term
 // Returns occurrence count and document hit count per decade for a term.
 // ---------------------------------------------------------------------------

@@ -100,6 +100,12 @@ The UI has been refined from a developer tool into one suitable for a non-techni
 
 - **Multi-series frequency chart:** term / tag / category occurrences per decade rendered as a grouped SVG bar chart; up to N series plotted simultaneously using a chip-selector UI; `GET /api/analysis/termfreq`
 
+### 4e · Data quality panel ✅
+
+- **Duplicate detection:** `GET /api/analysis/duplicates` groups annotations by `(document_id, source_passage)` and returns groups with more than one entry; displayed in the Quality sub-tab with per-row delete
+- **Untagged annotation triage:** `GET /api/analysis/untagged` returns all annotations where `tag IS NULL`; researcher can assign a tag from the existing tag list or delete each entry inline
+- Both sections load lazily on first open of the Quality tab and reset on corpus refresh
+
 ### 4d · Export for external DH tools 🔜
 
 - **REFI-QDA (`.qdpx`):** standard interchange format for Atlas.ti, MAXQDA, NVivo, RQDA

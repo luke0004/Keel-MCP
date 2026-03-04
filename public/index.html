@@ -719,6 +719,7 @@
       <button class="ana-tab"            id="anaTabFreq"     onclick="showAnalysis('freq')">Frequency</button>
       <button class="ana-tab"            id="anaTabCooc"     onclick="showAnalysis('cooc')">Co-occurrence</button>
       <button class="ana-tab"            id="anaTabTimeline" onclick="showAnalysis('timeline')">Timeline</button>
+      <button class="ana-tab"            id="anaTabQuality"  onclick="showAnalysis('quality')">Quality</button>
     </div>
 
     <!-- KWIC concordance -->
@@ -778,6 +779,12 @@
       </div>
     </div>
 
+    <!-- Data Quality -->
+    <div id="anaPanelQuality" style="display:none; flex-direction:column; gap:1rem; padding:1rem; overflow-y:auto; flex:1; min-height:0">
+      <div id="qualityDuplicates"><span style="color:#ccc; font-size:0.83rem">Loading…</span></div>
+      <div id="qualityUntagged"></div>
+    </div>
+
   </div><!-- /analysisPanel -->
 
 </div>
@@ -817,6 +824,7 @@ let activeViewerTab      = 'document';   // 'document' | 'analysis'
 let activeAnalysisTab    = 'kwic';       // 'kwic' | 'cooc' | 'timeline'
 let coocLoaded           = false;
 let timelineLoaded       = false;
+let qualityLoaded        = false;
 let timelineDocs         = {};
 
 // ── File selection & upload ───────────────────────────────────────────────────
@@ -914,6 +922,7 @@ document.getElementById('uploadForm').addEventListener('submit', async e => {
 async function refreshCorpus() {
   coocLoaded = false;
   timelineLoaded = false;
+  qualityLoaded = false;
   await Promise.all([loadDocuments(), loadTagSummary()]);
 }
 
@@ -2209,10 +2218,11 @@ function showAnalysis(tab) {
     freq:     ['anaPanelFreq',     'flex'],
     cooc:     ['anaPanelCooc',     'block'],
     timeline: ['anaPanelTimeline', 'block'],
+    quality:  ['anaPanelQuality',  'flex'],
   };
   const tabIds = {
     kwic: 'anaTabKwic', collo: 'anaTabCollo', freq: 'anaTabFreq',
-    cooc: 'anaTabCooc', timeline: 'anaTabTimeline',
+    cooc: 'anaTabCooc', timeline: 'anaTabTimeline', quality: 'anaTabQuality',
   };
   for (const [t, [panelId, display]] of Object.entries(panels)) {
     const el = document.getElementById(panelId);
@@ -2221,6 +2231,7 @@ function showAnalysis(tab) {
   }
   if (tab === 'cooc'     && !coocLoaded)     { loadCooccurrence(); coocLoaded = true; }
   if (tab === 'timeline' && !timelineLoaded) { loadTimeline();     timelineLoaded = true; }
+  if (tab === 'quality'  && !qualityLoaded)  { loadQuality();      qualityLoaded = true; }
 }
 
 // ── KWIC concordance ──────────────────────────────────────────────────────────
@@ -2753,6 +2764,157 @@ function positionTimelineTip(e) {
   if (y < 0) y = 4;
   tip.style.left = x + 'px';
   tip.style.top  = y + 'px';
+}
+
+// ── Data quality ───────────────────────────────────────────────────────────────
+
+async function loadQuality() {
+  const dupEl   = document.getElementById('qualityDuplicates');
+  const untagEl = document.getElementById('qualityUntagged');
+  dupEl.innerHTML   = '<span style="color:#ccc; font-size:0.83rem">Loading…</span>';
+  untagEl.innerHTML = '';
+  try {
+    const [dups, untagged] = await Promise.all([
+      fetch('/api/analysis/duplicates').then(r => r.json()),
+      fetch('/api/analysis/untagged').then(r => r.json()),
+    ]);
+    renderDuplicates(dups, dupEl);
+    renderUntagged(untagged, untagEl);
+  } catch (err) {
+    dupEl.innerHTML = `<span class="error" style="font-size:0.82rem">Error: ${escapeHtml(err.message)}</span>`;
+  }
+}
+
+function renderDuplicates(dups, container) {
+  if (!dups.length) {
+    container.innerHTML = '<div style="font-size:0.83rem; color:#aaa">No duplicate passages found.</div>';
+    return;
+  }
+  const heading = document.createElement('div');
+  heading.id = 'qualityDupHeading';
+  heading.style.cssText = 'font-size:0.82rem; font-weight:600; color:#555; margin-bottom:0.6rem';
+  heading.textContent = `Duplicates (${dups.length} group${dups.length !== 1 ? 's' : ''})`;
+  container.innerHTML = '';
+  container.appendChild(heading);
+
+  for (const group of dups) {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#f8f9fb; border:1px solid #e4e7ef; border-radius:6px; padding:0.7rem 0.85rem; margin-bottom:0.75rem';
+
+    const passage = group.source_passage.length > 120
+      ? group.source_passage.slice(0, 120) + '…'
+      : group.source_passage;
+
+    let rows = '';
+    for (const ann of group.annotations) {
+      const tagChip = ann.tag
+        ? `<span style="background:${tagColor(ann.tag)}; color:#fff; border-radius:3px; padding:1px 5px; font-size:0.72rem; font-weight:600">${escapeHtml(ann.tag)}</span>`
+        : '<span style="color:#bbb; font-size:0.72rem">(no tag)</span>';
+      rows += `<tr data-ann-id="${escapeHtml(ann.id)}">
+        <td style="padding:0.25rem 0.5rem 0.25rem 0; white-space:nowrap">${tagChip}</td>
+        <td style="padding:0.25rem 0.5rem; color:#777; font-size:0.75rem">${escapeHtml(ann.author_type || '')}</td>
+        <td style="padding:0.25rem 0.5rem; color:#999; font-size:0.75rem">${escapeHtml(ann.review_status || '')}</td>
+        <td style="padding:0.25rem 0 0.25rem 0.5rem; text-align:right">
+          <button onclick="deleteAnnotationById('${escapeHtml(ann.id)}', this.closest('tr'), 'qualityDupHeading', ${dups.length})"
+                  style="font-size:0.72rem; color:#c0392b; background:none; border:none; cursor:pointer; padding:0">Delete</button>
+        </td>
+      </tr>`;
+    }
+
+    card.innerHTML = `
+      <div style="font-size:0.73rem; color:#888; margin-bottom:0.3rem">${escapeHtml(group.document_title)}</div>
+      <div style="font-size:0.78rem; color:#444; font-style:italic; margin-bottom:0.5rem; line-height:1.4">"${escapeHtml(passage)}"</div>
+      <table style="width:100%; border-collapse:collapse">${rows}</table>`;
+    container.appendChild(card);
+  }
+}
+
+function renderUntagged(untagged, container) {
+  if (!untagged.length) {
+    container.innerHTML = '<div style="font-size:0.83rem; color:#aaa">No untagged annotations.</div>';
+    return;
+  }
+  const heading = document.createElement('div');
+  heading.id = 'qualityUntagHeading';
+  heading.style.cssText = 'font-size:0.82rem; font-weight:600; color:#555; margin-bottom:0.6rem';
+  heading.textContent = `Untagged annotations (${untagged.length})`;
+  container.innerHTML = '';
+  container.appendChild(heading);
+
+  const tags = (window._lastTagSummary || []).map(t => t.tag);
+
+  for (const ann of untagged) {
+    const card = document.createElement('div');
+    card.dataset.annId = ann.id;
+    card.style.cssText = 'background:#f8f9fb; border:1px solid #e4e7ef; border-radius:6px; padding:0.7rem 0.85rem; margin-bottom:0.6rem';
+
+    const passage = (ann.source_passage || '').length > 100
+      ? ann.source_passage.slice(0, 100) + '…'
+      : (ann.source_passage || '');
+    const note = ann.text ? `<div style="font-size:0.75rem; color:#888; margin-top:0.2rem">${escapeHtml(ann.text)}</div>` : '';
+
+    const opts = tags.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    const selectId = `untagSel_${ann.id}`;
+
+    card.innerHTML = `
+      <div style="font-size:0.73rem; color:#888; margin-bottom:0.25rem">${escapeHtml(ann.document_title)}</div>
+      <div style="font-size:0.78rem; color:#444; font-style:italic; line-height:1.4">"${escapeHtml(passage)}"</div>
+      ${note}
+      <div style="display:flex; gap:0.4rem; align-items:center; margin-top:0.5rem; flex-wrap:wrap">
+        <select id="${selectId}" style="font-size:0.78rem; border:1px solid #ccc; border-radius:4px; padding:0.2rem 0.4rem; background:#fff">
+          <option value="">— assign tag —</option>
+          ${opts}
+        </select>
+        <button onclick="assignTagToAnnotation('${escapeHtml(ann.id)}', '${selectId}', this.closest('[data-ann-id]'), 'qualityUntagHeading')"
+                style="font-size:0.75rem; background:#7986cb; color:#fff; border:none; border-radius:4px; padding:0.2rem 0.55rem; cursor:pointer">Assign</button>
+        <button onclick="deleteAnnotationById('${escapeHtml(ann.id)}', this.closest('[data-ann-id]'), 'qualityUntagHeading', ${untagged.length})"
+                style="font-size:0.75rem; color:#c0392b; background:none; border:none; cursor:pointer; padding:0">Delete</button>
+      </div>`;
+    container.appendChild(card);
+  }
+}
+
+async function deleteAnnotationById(id, rowEl, headingId, total) {
+  try {
+    const r = await fetch(`/api/annotations/${id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Delete failed');
+    rowEl.remove();
+    const h = document.getElementById(headingId);
+    if (h) {
+      const m = h.textContent.match(/\((\d+)/);
+      if (m) {
+        const n = parseInt(m[1], 10) - 1;
+        h.textContent = h.textContent.replace(/\(\d+/, `(${n}`);
+      }
+    }
+  } catch (err) {
+    alert('Could not delete: ' + err.message);
+  }
+}
+
+async function assignTagToAnnotation(id, selectId, cardEl, headingId) {
+  const sel = document.getElementById(selectId);
+  const tag = sel ? sel.value : '';
+  if (!tag) { alert('Please select a tag first.'); return; }
+  try {
+    const r = await fetch(`/api/annotations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Update failed');
+    cardEl.remove();
+    const h = document.getElementById(headingId);
+    if (h) {
+      const m = h.textContent.match(/\((\d+)/);
+      if (m) {
+        const n = parseInt(m[1], 10) - 1;
+        h.textContent = h.textContent.replace(/\(\d+/, `(${n}`);
+      }
+    }
+  } catch (err) {
+    alert('Could not assign tag: ' + err.message);
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

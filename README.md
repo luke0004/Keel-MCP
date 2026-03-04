@@ -245,6 +245,7 @@ Switch to the **Research** tab (top of the Reader column) to access corpus-wide 
 | **Frequency** | Plot term frequency, tag coverage, or category coverage per decade as a grouped bar chart — supports multiple series simultaneously using a chip selector |
 | **Co-occurrence** | Which tag pairs appear together most often on the same document |
 | **Timeline** | Documents plotted by year, dot size scaled to annotation count, coloured by their most frequent tag |
+| **Quality** | Data quality panel — lists duplicate annotations (same passage annotated more than once) and untagged annotations; delete duplicates inline or assign a tag to untagged entries without leaving the Research tab |
 
 ---
 
