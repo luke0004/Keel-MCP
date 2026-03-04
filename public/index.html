@@ -668,10 +668,17 @@
       <button id="tabDocument" class="tab-btn tab-active" onclick="switchTab('document')">Document</button>
       <button id="tabAnalysis" class="tab-btn" onclick="switchTab('analysis')">Research</button>
     </div>
-    <label id="annotationsOnlyWrap" style="font-size:0.78rem; color:#888; display:flex;
-                  align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal">
-      <input type="checkbox" id="annotationsOnlyToggle"> Annotations only
-    </label>
+    <div style="display:flex; align-items:center; gap:0.75rem">
+      <button id="annotateToggleBtn" onclick="toggleAnnotationMode()"
+              title="Toggle between annotation mode (select to annotate) and copy mode (select to copy)"
+              style="font-size:0.75rem; padding:0.2rem 0.55rem; border-radius:4px; cursor:pointer;
+                     border:1px solid #7986cb; background:#7986cb; color:#fff; font-weight:600;
+                     line-height:1.4; white-space:nowrap">✏ Annotate</button>
+      <label id="annotationsOnlyWrap" style="font-size:0.78rem; color:#888; display:flex;
+                    align-items:center; gap:0.35rem; cursor:pointer; font-weight:normal">
+        <input type="checkbox" id="annotationsOnlyToggle"> Annotations only
+      </label>
+    </div>
   </div>
 
   <!-- Pending annotation panel -->
@@ -816,6 +823,7 @@ let categoriesData       = [];     // [{id, name, color, tags:[...]}]
 let currentDocId         = null;   // document currently open in the viewer
 let currentDocContent    = null;   // raw content string of that document
 let showAnnotationsOnly  = false;
+let annotationModeActive = true;   // when false, text selection copies normally
 let currentSort          = 'date-asc';
 let reselectAnnId        = null;   // annotation being re-selected (Option C)
 let reselectTag          = '';
@@ -1853,6 +1861,7 @@ for (const inputId of ['pending-tag', 'pending-note']) {
 }
 
 document.getElementById('viewerContent').addEventListener('mouseup', () => {
+  if (!annotationModeActive) return;
   setTimeout(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !currentDocId) return;
@@ -1883,6 +1892,24 @@ function hidePendingAnnotation() {
   document.getElementById('pending-tag').value  = '';
   document.getElementById('pending-note').value = '';
   pendingText = null;
+}
+
+function toggleAnnotationMode() {
+  annotationModeActive = !annotationModeActive;
+  const btn = document.getElementById('annotateToggleBtn');
+  if (annotationModeActive) {
+    btn.textContent = '✏ Annotate';
+    btn.style.background = '#7986cb';
+    btn.style.borderColor = '#7986cb';
+    btn.style.color = '#fff';
+  } else {
+    btn.textContent = '📋 Copy';
+    btn.style.background = '#fff';
+    btn.style.borderColor = '#ccc';
+    btn.style.color = '#666';
+    hidePendingAnnotation();
+    window.getSelection()?.removeAllRanges();
+  }
 }
 
 async function saveAnnotation(sourcePassage, tag, note) {
@@ -2095,6 +2122,8 @@ function startReselect(annId, tag, note) {
   reselectAnnId  = annId;
   reselectTag    = tag  || '';
   reselectNote   = note || '';
+  // Re-selection requires annotation mode — activate it if currently in copy mode
+  if (!annotationModeActive) toggleAnnotationMode();
   viewDocument(currentDocId);   // re-render: closes edit form, shows banner
 }
 
